@@ -1,4 +1,2 @@
-"false"
-"nil"
-true
-"empty"
+[line 2] Runtime error: Expected `bool` as condition
+false

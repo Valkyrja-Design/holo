@@ -209,7 +209,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                         return InterpretResult::RuntimeError;
                     }
 
-                    writeln!(self.output_stream, "{:#?}", self.stack.pop().unwrap());
+                    let _ = writeln!(self.output_stream, "{:#?}", self.stack.pop().unwrap());
                 }
                 OpCode::Pop => {
                     if self.stack.is_empty() {
@@ -220,7 +220,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 }
                 OpCode::DefineGlobal => {
                     // IMP: lookout for GC here
-                    let index: usize = self.read_int();
+                    let index: usize = self.read_int8();
 
                     if self.define_global(index) != InterpretResult::Ok {
                         return InterpretResult::RuntimeError;
@@ -228,77 +228,109 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 }
                 OpCode::DefineGlobalLong => {
                     // IMP: lookout for GC here
-                    let index = self.read_int_long();
+                    let index = self.read_int24();
 
                     if self.define_global(index) != InterpretResult::Ok {
                         return InterpretResult::RuntimeError;
                     }
                 }
                 OpCode::GetGlobal => {
-                    let index = self.read_int();
+                    let index = self.read_int8();
 
                     if self.get_global(index) != InterpretResult::Ok {
                         return InterpretResult::RuntimeError;
                     }
                 }
                 OpCode::GetGlobalLong => {
-                    let index = self.read_int_long();
+                    let index = self.read_int24();
 
                     if self.get_global(index) != InterpretResult::Ok {
                         return InterpretResult::RuntimeError;
                     }
                 }
                 OpCode::SetGlobal => {
-                    let index = self.read_int();
+                    let index = self.read_int8();
 
                     if self.set_global(index) != InterpretResult::Ok {
                         return InterpretResult::RuntimeError;
                     }
                 }
                 OpCode::SetGlobalLong => {
-                    let index = self.read_int_long();
+                    let index = self.read_int24();
 
                     if self.set_global(index) != InterpretResult::Ok {
                         return InterpretResult::RuntimeError;
                     }
                 }
                 OpCode::GetLocal => {
-                    let index = self.read_int();
+                    let index = self.read_int8();
 
                     self.get_local(index);
                 }
                 OpCode::GetLocalLong => {
-                    let index = self.read_int_long();
+                    let index = self.read_int24();
 
                     self.get_local(index);
                 }
                 OpCode::SetLocal => {
-                    let index = self.read_int();
+                    let index = self.read_int8();
 
                     if self.set_local(index) != InterpretResult::Ok {
                         return InterpretResult::RuntimeError;
                     }
                 }
                 OpCode::SetLocalLong => {
-                    let index = self.read_int_long();
+                    let index = self.read_int24();
 
                     if self.set_local(index) != InterpretResult::Ok {
                         return InterpretResult::RuntimeError;
                     }
                 }
                 OpCode::PopN => {
-                    let n = self.read_int();
+                    let n = self.read_int8();
 
                     self.stack.truncate(self.stack.len() - n);
                 }
                 OpCode::PopNLong => {
-                    let n = self.read_int_long();
+                    let n = self.read_int24();
 
                     self.stack.truncate(self.stack.len() - n);
                 }
-                OpCode::JumpIfFalse => {},
-                OpCode::JumpIfTrue => {},
-                OpCode::Jump => {},
+                OpCode::JumpIfFalse => {
+                    let jump_offset = self.read_int16();
+
+                    match self.stack.last() {
+                        Some(Value::Bool(value)) => {
+                            if !*value {
+                                self.ip += jump_offset;
+                            }
+                        }
+                        Some(_) => {
+                            return self.runtime_error("Expected `bool` as condition");
+                        }
+                        _ => unreachable!("No value in the stack"),
+                    }
+                }
+                OpCode::JumpIfTrue => {
+                    let jump_offset = self.read_int16();
+
+                    match self.stack.last() {
+                        Some(Value::Bool(value)) => {
+                            if *value {
+                                self.ip += jump_offset;
+                            }
+                        }
+                        Some(_) => {
+                            return self.runtime_error("Expected `bool` as condition");
+                        }
+                        _ => unreachable!("No value in the stack"),
+                    }
+                }
+                OpCode::Jump => {
+                    let jump_offset = self.read_int16();
+
+                    self.ip += jump_offset;
+                }
             }
         }
     }
@@ -424,7 +456,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         }
 
         let right = self.stack.pop().unwrap();
-        
+
         match (self.stack.last_mut().unwrap(), right) {
             (Value::Number(_), Value::Number(0.0)) => self.runtime_error("Division by 0"),
             (Value::Number(left), Value::Number(right)) => {
@@ -459,13 +491,19 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         self.chunk.constants[idx]
     }
 
-    fn read_int(&mut self) -> usize {
+    fn read_int8(&mut self) -> usize {
         self.read_byte() as usize
     }
 
-    fn read_int_long(&mut self) -> usize {
+    fn read_int16(&mut self) -> usize {
+        let ret = Chunk::read_as_16bit_int(&self.chunk.code[self.ip..self.ip + 2]);
+
+        self.ip += 2;
+        ret
+    }
+    fn read_int24(&mut self) -> usize {
         let ret = Chunk::read_as_24bit_int(&self.chunk.code[self.ip..self.ip + 3]);
-        
+
         self.ip += 3;
         ret
     }
@@ -474,7 +512,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         let instr = self.ip - 1;
         let line = self.chunk.get_line_of(instr);
         let _ = writeln!(self.err_stream, "[line {line}] Runtime error: {err}");
-        
+
         InterpretResult::RuntimeError
     }
 }

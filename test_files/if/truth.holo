@@ -1,4 +1,3 @@
-// False and nil are false.
 if (false) print "bad"; else print "false"; // expect: false
 if (nil) print "bad"; else print "nil"; // expect: nil
 

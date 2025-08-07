@@ -463,8 +463,20 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 self.end_scope();
                 Ok(())
             }
+            TokenKind::If => {
+                self.advance()?;
+                self.if_stmt()
+            }
             _ => self.expression_statement(),
         }
+    }
+
+    fn print_statement(&mut self) -> Result<(), CompileError<'a>> {
+        self.expression()?;
+        self.consume(TokenKind::Semicolon, "Expected ';' at the end of statement")?;
+        self.emit_opcode(OpCode::Print);
+
+        Ok(())
     }
 
     fn block(&mut self) -> Result<(), CompileError<'a>> {
@@ -485,12 +497,36 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
     }
 
-    fn print_statement(&mut self) -> Result<(), CompileError<'a>> {
+    fn if_stmt(&mut self) -> Result<(), CompileError<'a>> {
+        self.consume(TokenKind::LeftParen, "Expected '('")?;
+        // compile the condition
         self.expression()?;
-        self.consume(TokenKind::Semicolon, "Expected ';' at the end of statement")?;
-        self.emit_opcode(OpCode::Print);
+        self.consume(TokenKind::RightParen, "Expected ')'")?;
 
-        Ok(())
+        let then_jump = self.emit_jump(OpCode::JumpIfFalse);
+
+        // pop the condition
+        self.emit_opcode(OpCode::Pop);
+        // compile the block
+        self.statement()?;
+
+        // to skip the `else` block after executing the `if` block
+        let else_jump = self.emit_jump(OpCode::Jump);
+
+        // `else` branch starts now
+        self.patch_jump(then_jump)?;
+
+        // pop the condition in the `else` branch
+        self.emit_opcode(OpCode::Pop);
+
+        // compile the `else` branch if present
+        if self.check(TokenKind::Else) {
+            self.advance()?;
+            self.statement()?;
+        }
+
+        // end of `else` branch
+        self.patch_jump(else_jump)
     }
 
     fn expression_statement(&mut self) -> Result<(), CompileError<'a>> {
@@ -893,6 +929,30 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             index,
             "Too many constants in the chunk".to_string(),
         )
+    }
+
+    fn emit_jump(&mut self, opcode: OpCode) -> usize {
+        self.chunk.write_opcode(opcode, self.prev_token.line);
+        self.chunk.write_bytes(&[0; 2], &[self.prev_token.line; 2]);
+        // return the location of the first byte of the jump address
+        self.chunk.code.len() - 2
+    }
+
+    fn patch_jump(&mut self, offset: usize) -> Result<(), CompileError<'a>> {
+        const BYTE_MASK: usize = (1usize << 8) - 1;
+
+        let jump_dist = self.chunk.code.len() - offset - 2;
+
+        if jump_dist > u16::MAX as usize {
+            Err(CompileError::new(
+                self.prev_token.clone(),
+                "Too much jump distance".to_string(),
+            ))
+        } else {
+            self.chunk.code[offset] = ((jump_dist >> 8) & BYTE_MASK) as u8;
+            self.chunk.code[offset + 1] = (jump_dist & BYTE_MASK) as u8;
+            Ok(())
+        }
     }
 
     fn get_rule(&self, kind: TokenKind) -> &ParseRule<'a, 'b, W> {

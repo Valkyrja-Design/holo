@@ -1,1 +1,1 @@
-[line 2] Error at 'foo': Expected '(' after 'fun'
+[line 2] Error at 'fun': Expected expression

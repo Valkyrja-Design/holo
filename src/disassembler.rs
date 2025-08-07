@@ -125,12 +125,12 @@ mod tests {
         chunk.write_opcode(OpCode::Sub, 5);
         chunk.write_opcode(OpCode::Divide, 6);
         chunk.write_opcode(OpCode::Mult, 6);
-        
+
         // Nil, True, False literals
         chunk.write_opcode(OpCode::Nil, 7);
         chunk.write_opcode(OpCode::True, 7);
         chunk.write_opcode(OpCode::False, 7);
-        
+
         // logical operations
         chunk.write_opcode(OpCode::Not, 8);
         chunk.write_opcode(OpCode::Equal, 8);
@@ -139,47 +139,47 @@ mod tests {
         chunk.write_opcode(OpCode::GreaterEqual, 8);
         chunk.write_opcode(OpCode::Less, 8);
         chunk.write_opcode(OpCode::LessEqual, 8);
-        
+
         chunk.write_opcode(OpCode::Print, 9);
         chunk.write_opcode(OpCode::Pop, 9);
         chunk.write_opcode(OpCode::Ternary, 9);
-        
+
         // global variable operations
         chunk.write_opcode(OpCode::DefineGlobal, 10);
         chunk.write_byte(5, 10);
-        
+
         chunk.write_opcode(OpCode::DefineGlobalLong, 10);
         chunk.write_as_24bit_int(500, 10);
-        
+
         chunk.write_opcode(OpCode::GetGlobal, 11);
         chunk.write_byte(5, 11);
-        
+
         chunk.write_opcode(OpCode::GetGlobalLong, 11);
         chunk.write_as_24bit_int(500, 11);
-        
+
         chunk.write_opcode(OpCode::SetGlobal, 12);
         chunk.write_byte(5, 12);
-        
+
         chunk.write_opcode(OpCode::SetGlobalLong, 12);
         chunk.write_as_24bit_int(500, 12);
-        
+
         // local variable operations
         chunk.write_opcode(OpCode::GetLocal, 13);
         chunk.write_byte(1, 13);
-        
+
         chunk.write_opcode(OpCode::GetLocalLong, 13);
         chunk.write_as_24bit_int(256, 13);
-        
+
         chunk.write_opcode(OpCode::SetLocal, 14);
         chunk.write_byte(2, 14);
-        
+
         chunk.write_opcode(OpCode::SetLocalLong, 14);
         chunk.write_as_24bit_int(257, 14);
-        
+
         // stack manipulation
         chunk.write_opcode(OpCode::PopN, 15);
         chunk.write_byte(3, 15);
-        
+
         chunk.write_opcode(OpCode::PopNLong, 15);
         chunk.write_as_24bit_int(300, 15);
 
@@ -191,10 +191,10 @@ mod tests {
 
         chunk.write_opcode(OpCode::JumpIfFalse, 8);
         chunk.write_as_16bit_int(250, 9);
-        
+
         chunk.write_opcode(OpCode::JumpIfTrue, 8);
         chunk.write_as_16bit_int(375, 9);
-        
+
         disassemble(&chunk, "simple test chunk");
     }
 }
