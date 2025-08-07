@@ -1,2 +1,2 @@
-0x563e8c6456f0
-0x563e8c6456f0
+[line 2] Error at 'returnSelf': Expected '}' after class body
+[line 4] Error at '}': Expected expression

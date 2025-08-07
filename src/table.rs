@@ -89,31 +89,3 @@ impl Debug for StringInternTable {
         dbg.finish()
     }
 }
-
-pub struct StringTable(HashMap<StrKey, Value>);
-
-impl StringTable {
-    pub fn new() -> Self {
-        Self(HashMap::new())
-    }
-
-    pub fn insert(&mut self, key: NonNull<str>, value: Value) -> Option<Value> {
-        self.0.insert(StrKey(key), value)
-    }
-
-    pub fn get(&self, key: NonNull<str>) -> Option<&Value> {
-        self.0.get(&StrKey(key))
-    }
-}
-
-impl Debug for StringTable {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut dbg = f.debug_set();
-
-        for value in self.0.values() {
-            dbg.entry(value);
-        }
-
-        dbg.finish()
-    }
-}

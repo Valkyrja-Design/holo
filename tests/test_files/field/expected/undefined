@@ -1,1 +1,2 @@
-[line 4] Undefined property 'bar'
+Runtime error: Undefined property 'bar'
+[line 4] in <main>

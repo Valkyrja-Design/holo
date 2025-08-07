@@ -1,20 +1,19 @@
 mod common;
 
-use log::debug;
 use std::env;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
 #[test]
-fn assignment() {
+fn field() {
     let _ = env_logger::builder().is_test(true).try_init();
 
     // Base directory containing the test inputs and expected outputs
     let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("test_files")
-        .join("assignment");
+        .join("field");
     let expected_dir = base_dir.join("expected");
 
     for entry in fs::read_dir(&base_dir).unwrap() {
@@ -51,8 +50,8 @@ fn assignment() {
         let normalized_output = full_output.trim().replace("\r\n", "\n");
         let normalized_expected = expected.trim().replace("\r\n", "\n");
 
-        let mut file = fs::File::create(expected_path).unwrap();
-        let _err = file.write(full_output.trim().as_bytes());
+        // let mut file = fs::File::create(expected_path).unwrap();
+        // let _err = file.write(full_output.trim().as_bytes());
 
         assert_eq!(
             normalized_output,

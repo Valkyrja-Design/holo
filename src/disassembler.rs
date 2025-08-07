@@ -61,6 +61,9 @@ pub fn disassemble_instr(chunk: &Chunk, offset: usize) -> usize {
         OpCode::SetUpvalue => unary_instr8(chunk, "SET_UPVALUE", offset),
         OpCode::SetUpvalueLong => unary_instr24(chunk, "SET_UPVALUE_LONG", offset),
         OpCode::CloseUpvalue => simple_instr("CLOSE_UPVALUE", offset),
+        OpCode::Class => instr_with_const8(chunk, "CLASS", offset),
+        OpCode::GetProperty => instr_with_const8(chunk, "GET_PROPERTY", offset),
+        OpCode::SetProperty => instr_with_const8(chunk, "SET_PROPERTY", offset),
     }
 }
 

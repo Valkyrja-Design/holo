@@ -1,2 +1,2 @@
-[line 3] Error at 'class': Expected expression
+[line 4] Error at 'method': Expected '}' after class body
 [line 6] Error at '}': Expected expression

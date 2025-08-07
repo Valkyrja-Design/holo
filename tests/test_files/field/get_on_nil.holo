@@ -1,1 +1,1 @@
-nil.foo; // expect runtime error: Only instances have properties.
+nil.foo; // expect runtime error: Property must be accessed on a class instance

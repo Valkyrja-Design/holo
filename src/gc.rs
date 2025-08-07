@@ -1,8 +1,9 @@
 use super::native::NativeFunc;
 use super::sizeof::Sizeof;
-use super::value::{Closure, Function, Upvalue, Value};
+use super::value::{Class, ClassInstance, Closure, Function, Upvalue, Value};
 use log::debug;
 use std::collections::HashSet;
+use std::ptr;
 
 static GC_DEFAULT_THRESHOLD: usize = 1024 * 1024; // 1 MB
 static GC_THRESHOLD_GROWTH_FACTOR: f64 = 2.0;
@@ -17,6 +18,8 @@ pub struct GC {
     closures: Vec<*mut Closure>,
     natives: Vec<*mut NativeFunc>,
     upvalues: Vec<*mut Upvalue>,
+    classes: Vec<*mut Class>,
+    class_instances: Vec<*mut ClassInstance>,
 
     // "black" GC pointers that have had their references traced
     marked_strings: HashSet<*mut String>,
@@ -24,11 +27,14 @@ pub struct GC {
     marked_closures: HashSet<*mut Closure>,
     marked_natives: HashSet<*mut NativeFunc>,
     marked_upvalues: HashSet<*mut Upvalue>,
+    marked_classes: HashSet<*mut Class>,
+    marked_class_instances: HashSet<*mut ClassInstance>,
 
     // Currently "gray" GC pointers that have not had their references traced
     worklist_functions: Vec<*mut Function>,
     worklist_closures: Vec<*mut Closure>,
     worklist_upvalues: Vec<*mut Upvalue>,
+    worklist_class_instances: Vec<*mut ClassInstance>,
 }
 
 impl GC {
@@ -41,14 +47,19 @@ impl GC {
             closures: Vec::new(),
             natives: Vec::new(),
             upvalues: Vec::new(),
+            classes: Vec::new(),
+            class_instances: Vec::new(),
             marked_strings: HashSet::new(),
             marked_functions: HashSet::new(),
             marked_closures: HashSet::new(),
             marked_natives: HashSet::new(),
             marked_upvalues: HashSet::new(),
+            marked_classes: HashSet::new(),
+            marked_class_instances: HashSet::new(),
             worklist_functions: Vec::new(),
             worklist_closures: Vec::new(),
             worklist_upvalues: Vec::new(),
+            worklist_class_instances: Vec::new(),
         }
     }
 
@@ -102,6 +113,30 @@ impl GC {
         Value::Upvalue(ptr)
     }
 
+    pub fn alloc_class(&mut self, c: Class) -> Value {
+        self.bytes_allocated += c.sizeof();
+
+        let ptr = Box::into_raw(Box::new(c));
+        debug!("Allocating class {:?} at {:?}", unsafe { &*ptr }, ptr);
+
+        self.classes.push(ptr);
+        Value::Class(ptr)
+    }
+
+    pub fn alloc_class_instance(&mut self, c: ClassInstance) -> Value {
+        self.bytes_allocated += c.sizeof();
+
+        let ptr = Box::into_raw(Box::new(c));
+        debug!(
+            "Allocating class instance {:?} at {:?}",
+            unsafe { &*ptr },
+            ptr
+        );
+
+        self.class_instances.push(ptr);
+        Value::ClassInstance(ptr)
+    }
+
     // Raw pointer allocation methods for cases needing direct pointers
     pub fn alloc_string_ptr(&mut self, s: String) -> *mut String {
         self.bytes_allocated += s.sizeof();
@@ -153,6 +188,30 @@ impl GC {
         ptr
     }
 
+    pub fn alloc_class_ptr(&mut self, c: Class) -> *mut Class {
+        self.bytes_allocated += c.sizeof();
+
+        let ptr = Box::into_raw(Box::new(c));
+        debug!("Allocating class {:?} at {:?}", unsafe { &*ptr }, ptr);
+
+        self.classes.push(ptr);
+        ptr
+    }
+
+    pub fn alloc_class_instance_ptr(&mut self, c: ClassInstance) -> *mut ClassInstance {
+        self.bytes_allocated += c.sizeof();
+
+        let ptr = Box::into_raw(Box::new(c));
+        debug!(
+            "Allocating class instance {:?} at {:?}",
+            unsafe { &*ptr },
+            ptr
+        );
+
+        self.class_instances.push(ptr);
+        ptr
+    }
+
     /// Marks a value as reachable
     pub fn mark_value(&mut self, v: Value) {
         match v {
@@ -175,6 +234,18 @@ impl GC {
                     return;
                 }
                 self.mark_upvalue(ptr)
+            }
+            Value::Class(ptr) => {
+                if self.marked_classes.contains(&ptr) {
+                    return;
+                }
+                self.mark_class(ptr)
+            }
+            Value::ClassInstance(ptr) => {
+                if self.marked_class_instances.contains(&ptr) {
+                    return;
+                }
+                self.mark_class_instance(ptr)
             }
             Value::Nil | Value::Bool(_) | Value::Number(_) => {}
         }
@@ -217,12 +288,26 @@ impl GC {
         self.worklist_upvalues.push(ptr);
     }
 
+    /// Marks a class pointer as reachable
+    pub fn mark_class(&mut self, ptr: *mut Class) {
+        debug!("Marking class {:?} at {:?}", unsafe { &*ptr }, ptr);
+        self.marked_classes.insert(ptr);
+    }
+
+    /// Marks a class instance pointer as reachable
+    pub fn mark_class_instance(&mut self, ptr: *mut ClassInstance) {
+        debug!("Marking class instance {:?} at {:?}", unsafe { &*ptr }, ptr);
+        self.marked_class_instances.insert(ptr);
+        self.worklist_class_instances.push(ptr);
+    }
+
     /// Traces all values that are reachable from the roots
     pub fn trace_references(&mut self) {
         // FIXME: Not very efficient, but works for now
         while !self.worklist_closures.is_empty()
             || !self.worklist_functions.is_empty()
             || !self.worklist_upvalues.is_empty()
+            || !self.worklist_class_instances.is_empty()
         {
             while let Some(ptr) = self.worklist_functions.pop() {
                 // Mark the constants in the function's chunk
@@ -254,6 +339,17 @@ impl GC {
                 unsafe {
                     // FIXME: Use the `closed` field instead?
                     self.mark_value(*((*ptr).location));
+                }
+            }
+
+            while let Some(ptr) = self.worklist_class_instances.pop() {
+                // Mark the parent class and all fields
+                unsafe {
+                    self.mark_class((*ptr).class);
+
+                    for (_k, v) in &(*ptr).fields {
+                        self.mark_value(*v);
+                    }
                 }
             }
         }
@@ -342,6 +438,34 @@ impl GC {
             }
         });
 
+        self.classes.retain(|&ptr| {
+            if self.marked_classes.contains(&ptr) {
+                true
+            } else {
+                debug!("Freeing class at {:?}", ptr);
+
+                self.bytes_allocated -= unsafe { &*ptr }.sizeof();
+                unsafe {
+                    let _ = Box::from_raw(ptr);
+                }
+                false
+            }
+        });
+
+        self.class_instances.retain(|&ptr| {
+            if self.marked_class_instances.contains(&ptr) {
+                true
+            } else {
+                debug!("Freeing class instance at {:?}", ptr);
+
+                self.bytes_allocated -= unsafe { &*ptr }.sizeof();
+                unsafe {
+                    let _ = Box::from_raw(ptr);
+                }
+                false
+            }
+        });
+
         // Set the next GC threshold
         self.next_gc = (self.bytes_allocated as f64 * GC_THRESHOLD_GROWTH_FACTOR) as usize;
 
@@ -368,6 +492,20 @@ impl Drop for GC {
     fn drop(&mut self) {
         // Convert raw pointers back to Box to properly drop them. The GC
         // should be the only owner of these pointers, so this is safe
+        for &ptr in &self.class_instances {
+            debug!("Freeing class instance at {:?}", ptr);
+            unsafe {
+                let _ = Box::from_raw(ptr);
+            }
+        }
+
+        for &ptr in &self.classes {
+            debug!("Freeing class at {:?}", ptr);
+            unsafe {
+                let _ = Box::from_raw(ptr);
+            }
+        }
+
         for &ptr in &self.upvalues {
             debug!("Freeing upvalue at {:?}", ptr);
             unsafe {

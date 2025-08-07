@@ -1,4 +1,3 @@
-"other"
-1
-"method"
-2
+[line 3] Error at 'method': Expected '}' after class body
+[line 6] Error at '}': Expected expression
+[line 10] Error at '}': Expected expression

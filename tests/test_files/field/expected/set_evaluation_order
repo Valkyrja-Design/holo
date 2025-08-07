@@ -1,2 +1,2 @@
-[line 2] Undefined variable 'undefined2'
-[line 1] Undefined variable 'undefined1'
+Runtime error: Undefined variable 'undefined1'
+[line 1] in <main>

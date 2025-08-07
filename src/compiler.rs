@@ -180,8 +180,8 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }, // Comma
         ParseRule {
             prefix_rule: None,
-            infix_rule: None,
-            precedence: Precedence::None,
+            infix_rule: Some(Self::dot),
+            precedence: Precedence::Call,
         }, // Dot
         ParseRule {
             prefix_rule: Some(Self::unary),
@@ -459,6 +459,10 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 self.advance()?;
                 self.fun_declaration()
             }
+            TokenKind::Class => {
+                self.advance()?;
+                self.class_declaration()
+            }
             _ => self.statement(),
         }
     }
@@ -497,14 +501,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     }
 
     fn fun_declaration(&mut self) -> Result<'a, ()> {
-        if self.check(TokenKind::Identifier) {
-            self.advance()?;
-        } else {
-            return Err(CompileError::new(
-                self.prev_token.clone(),
-                "Expected function name".to_string(),
-            ));
-        }
+        self.consume(TokenKind::Identifier, "Expected function name")?;
 
         let name = self.prev_token.lexeme;
 
@@ -534,7 +531,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         let func_value = self.gc.alloc_function(function);
 
         // Emit a `Closure` instruction to wrap the function at runtime
-        self.emit_opcode_with_constant(OpCode::Closure, OpCode::ClosureLong, func_value)?;
+        self.emit_opcode_with_constant_long(OpCode::Closure, OpCode::ClosureLong, func_value)?;
 
         // Emit the upvalues
         for upvalue in upvalues {
@@ -605,6 +602,43 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
         // Implicit return
         self.emit_return();
+        Ok(())
+    }
+
+    /// Compiles a class declaration, assumes the `class` keyword has been consumed
+    fn class_declaration(&mut self) -> Result<'a, ()> {
+        self.consume(TokenKind::Identifier, "Expected class name")?;
+
+        let class_name = self.prev_token.lexeme;
+
+        let index = if self.curr_depth > 0 {
+            let index = self.declare_local(class_name)?;
+            self.mark_as_initialized(index);
+            index
+        } else {
+            self.sym_table.declare(class_name)
+        };
+
+        // FIXME: Add support for u24 constants
+        // Emit the `Class` instruction
+        let str_ptr = self.str_intern_table.intern_slice(class_name, self.gc);
+        self.emit_opcode_with_constant(OpCode::Class, Value::String(str_ptr))?;
+
+        // Define it as a variable
+        if self.curr_depth == 0 {
+            // Global variable
+            self.emit_opcode_with_num(
+                OpCode::DefineGlobal,
+                OpCode::DefineGlobalLong,
+                index,
+                "Too many globals in the program".to_owned(),
+            )?;
+        }
+
+        // Compile the class body (empty for now)
+        self.consume(TokenKind::LeftBrace, "Expected '{' before class body")?;
+        self.consume(TokenKind::RightBrace, "Expected '}' after class body")?;
+
         Ok(())
     }
 
@@ -942,7 +976,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
     fn number(&mut self, _: bool) -> Result<'a, ()> {
         match self.prev_token.lexeme.parse::<f64>() {
-            Ok(value) => self.emit_opcode_with_constant(
+            Ok(value) => self.emit_opcode_with_constant_long(
                 OpCode::Constant,
                 OpCode::ConstantLong,
                 Value::Number(value),
@@ -978,7 +1012,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 let s = &self.prev_token.lexeme[1..self.prev_token.lexeme.len() - 1];
                 let str_ptr = self.str_intern_table.intern_slice(s, self.gc);
 
-                self.emit_opcode_with_constant(
+                self.emit_opcode_with_constant_long(
                     OpCode::Constant,
                     OpCode::ConstantLong,
                     Value::String(str_ptr),
@@ -1156,6 +1190,21 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             .break_jumps
             .push(break_jump);
         Ok(())
+    }
+
+    fn dot(&mut self, can_assign: bool) -> Result<'a, ()> {
+        self.consume(TokenKind::Identifier, "Expected property name")?;
+
+        let name = self.prev_token.lexeme;
+        let name_ptr = self.str_intern_table.intern_slice(name, self.gc);
+
+        if can_assign && self.check(TokenKind::Equal) {
+            self.advance()?;
+            self.expression()?;
+            self.emit_opcode_with_constant(OpCode::SetProperty, Value::String(name_ptr))
+        } else {
+            self.emit_opcode_with_constant(OpCode::GetProperty, Value::String(name_ptr))
+        }
     }
 
     fn parse_precedence(&mut self, precedence: Precedence) -> Result<'a, ()> {
@@ -1549,7 +1598,22 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
     }
 
-    fn emit_opcode_with_constant(
+    fn emit_opcode_with_constant(&mut self, opcode: OpCode, value: Value) -> Result<'a, ()> {
+        let index = self.chunk().add_constant(value);
+
+        if index <= u8::MAX as usize {
+            self.emit_opcode(opcode);
+            self.emit_byte(index as u8);
+            Ok(())
+        } else {
+            Err(CompileError::new(
+                self.prev_token.clone(),
+                "Too many constants in the chunk".to_string(),
+            ))
+        }
+    }
+
+    fn emit_opcode_with_constant_long(
         &mut self,
         opcode: OpCode,
         opcode_long: OpCode,

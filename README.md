@@ -4,6 +4,7 @@ Holo is a small dynamically-typed and interpreted language inspired from [Lox](h
 
 ## TODO
 
+- [ ] Optimize field accesses
 - [ ] More efficient marking of GC pointers
 - [ ] upvalues behavior with `continue`
 - [ ] make new loop variable in every iteration (for closing over it)

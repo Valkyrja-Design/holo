@@ -1,5 +1,6 @@
 use super::chunk::Chunk;
 use super::native::NativeFunc;
+use std::collections::HashMap;
 use std::fmt::Debug;
 
 #[derive(Debug)]
@@ -38,8 +39,7 @@ impl Closure {
 
     pub fn function(&self) -> &Function {
         unsafe {
-            // SAFETY: Closure function pointers are allocated by GC and remain valid
-            // for the lifetime of the GC which outlives all Closure references
+            // SAFETY: GC guarantees that all pointers are valid
             &*self.function
         }
     }
@@ -57,6 +57,37 @@ impl Closure {
     }
 }
 
+#[derive(Debug)]
+pub struct Class {
+    pub name: String,
+}
+
+impl Class {
+    pub fn new(name: String) -> Self {
+        Self { name }
+    }
+}
+
+#[derive(Debug)]
+pub struct ClassInstance {
+    pub class: *mut Class,
+    // FIXME: Might want to make it a hashmap over `NonNull<str>`
+    pub fields: HashMap<String, Value>,
+}
+
+impl ClassInstance {
+    pub fn new(class: *mut Class) -> Self {
+        Self {
+            class,
+            fields: HashMap::new(),
+        }
+    }
+
+    pub fn get_field(&self, name: &str) -> Option<&Value> {
+        self.fields.get(name)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub enum Value {
     Nil,
@@ -67,71 +98,71 @@ pub enum Value {
     Closure(*mut Closure),
     NativeFunc(*mut NativeFunc),
     Upvalue(*mut Upvalue),
+    Class(*mut Class),
+    ClassInstance(*mut ClassInstance),
 }
 
 impl Value {
+    // SAFETY: GC guarantees that all pointers are valid
     pub fn as_string(&self) -> Option<&str> {
         match self {
-            Self::String(ptr) => unsafe {
-                // SAFETY: String pointers are allocated by GC and remain valid
-                // for the lifetime of the GC which outlives all Value references
-                ptr.as_ref().map(|s| s.as_str())
-            },
+            Self::String(ptr) => unsafe { Some((**ptr).as_str()) },
             _ => None,
         }
     }
 
     pub fn as_function(&self) -> Option<&Function> {
         match self {
-            Self::Function(ptr) => unsafe {
-                // SAFETY: Function pointers are allocated by GC and remain valid
-                // for the lifetime of the GC which outlives all Value references
-                ptr.as_ref()
-            },
+            Self::Function(ptr) => unsafe { Some(&**ptr) },
             _ => None,
         }
     }
 
     pub fn as_function_mut(&self) -> Option<&mut Function> {
         match self {
-            Self::Function(ptr) => unsafe {
-                // SAFETY: Function pointers are allocated by GC and remain valid
-                // for the lifetime of the GC which outlives all Value references
-                ptr.as_mut()
-            },
+            Self::Function(ptr) => unsafe { Some(&mut **ptr) },
             _ => None,
         }
     }
 
     pub fn as_closure(&self) -> Option<&Closure> {
         match self {
-            Self::Closure(ptr) => unsafe {
-                // SAFETY: Closure pointers are allocated by GC and remain valid
-                // for the lifetime of the GC which outlives all Value references
-                ptr.as_ref()
-            },
+            Self::Closure(ptr) => unsafe { Some(&**ptr) },
             _ => None,
         }
     }
 
     pub fn as_native_func(&self) -> Option<&NativeFunc> {
         match self {
-            Self::NativeFunc(ptr) => unsafe {
-                // SAFETY: NativeFunc pointers are allocated by GC and remain valid
-                // for the lifetime of the GC which outlives all Value references
-                ptr.as_ref()
-            },
+            Self::NativeFunc(ptr) => unsafe { Some(&**ptr) },
             _ => None,
         }
     }
 
     pub fn as_upvalue(&self) -> Option<&Upvalue> {
         match self {
-            Self::Upvalue(ptr) => unsafe {
-                // SAFETY: Upvalue pointers are allocated by GC and remain valid
-                // for the lifetime of the GC which outlives all Value references
-                ptr.as_ref()
-            },
+            Self::Upvalue(ptr) => unsafe { Some(&**ptr) },
+            _ => None,
+        }
+    }
+
+    pub fn as_class(&self) -> Option<&Class> {
+        match self {
+            Self::Class(ptr) => unsafe { Some(&**ptr) },
+            _ => None,
+        }
+    }
+
+    pub fn as_class_instance(&self) -> Option<&ClassInstance> {
+        match self {
+            Self::ClassInstance(ptr) => unsafe { Some(&**ptr) },
+            _ => None,
+        }
+    }
+
+    pub fn as_class_instance_mut(&self) -> Option<&mut ClassInstance> {
+        match self {
+            Self::ClassInstance(ptr) => unsafe { Some(&mut **ptr) },
             _ => None,
         }
     }
@@ -139,110 +170,68 @@ impl Value {
 
 impl Debug for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Nil => f.write_str("nil"),
-            Self::Bool(value) => f.write_str(&format!("{}", value)),
-            Self::Number(value) => f.write_str(&format!("{}", value)),
-            Self::String(ptr) => unsafe {
-                // SAFETY: String pointers are allocated by GC and guaranteed to be valid
-                // as long as the GC is alive, which outlives all Value instances
-                if let Some(s) = ptr.as_ref() {
-                    write!(f, "\"{}\"", s)
-                } else {
-                    write!(f, "<invalid string>")
+        unsafe {
+            // SAFETY: GC guarantees that all pointers are valid
+            match self {
+                Self::Nil => f.write_str("nil"),
+                Self::Bool(value) => f.write_str(&format!("{}", value)),
+                Self::Number(value) => f.write_str(&format!("{}", value)),
+                Self::String(ptr) => {
+                    write!(f, "\"{}\"", (**ptr))
                 }
-            },
-            Self::Function(ptr) => unsafe {
-                // SAFETY: Function pointers are allocated by GC and guaranteed to be valid
-                // as long as the GC is alive, which outlives all Value instances
-                if let Some(func) = ptr.as_ref() {
-                    write!(f, "<fn {}>", func.name)
-                } else {
-                    write!(f, "<invalid function>")
+                Self::Function(ptr) => {
+                    write!(f, "<fn {}>", (**ptr).name)
                 }
-            },
-            Self::Closure(ptr) => unsafe {
-                // SAFETY: Closure pointers are allocated by GC and guaranteed to be valid
-                // as long as the GC is alive, which outlives all Value instances
-                if let Some(closure) = ptr.as_ref() {
-                    write!(f, "<closure {}>", closure.name())
-                } else {
-                    write!(f, "<invalid closure>")
+                Self::Closure(ptr) => {
+                    write!(f, "<closure {}>", (**ptr).name())
                 }
-            },
-            Self::NativeFunc(ptr) => unsafe {
-                // SAFETY: NativeFunc pointers are allocated by GC and guaranteed to be valid
-                // as long as the GC is alive, which outlives all Value instances
-                if let Some(native) = ptr.as_ref() {
-                    write!(f, "<native fn {}>", native.name)
-                } else {
-                    write!(f, "<invalid native fn>")
+                Self::NativeFunc(ptr) => {
+                    write!(f, "<native fn {}>", (**ptr).name)
                 }
-            },
-            Self::Upvalue(ptr) => unsafe {
-                // SAFETY: Upvalue pointers are allocated by GC and guaranteed to be valid
-                // as long as the GC is alive, which outlives all Value instances
-                if let Some(upvalue) = ptr.as_ref() {
-                    write!(f, "<upvalue {:p}>", upvalue.location)
-                } else {
-                    write!(f, "<invalid upvalue>")
+                Self::Upvalue(ptr) => {
+                    write!(f, "<upvalue {:p}>", (**ptr).location)
                 }
-            },
+                Self::Class(ptr) => {
+                    write!(f, "<class {}>", (**ptr).name)
+                }
+                Self::ClassInstance(ptr) => {
+                    write!(f, "<instance of {}>", (*(**ptr).class).name)
+                }
+            }
         }
     }
 }
 
 impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Nil => f.write_str("nil"),
-            Self::Bool(value) => f.write_str(&format!("{}", value)),
-            Self::Number(value) => f.write_str(&format!("{}", value)),
-            Self::String(ptr) => unsafe {
-                // SAFETY: String pointers are allocated by GC and guaranteed to be valid
-                // as long as the GC is alive, which outlives all Value instances
-                if let Some(s) = ptr.as_ref() {
-                    write!(f, "{}", s)
-                } else {
-                    write!(f, "<invalid string>")
+        unsafe {
+            // SAFETY: GC guarantees that all pointers are valid
+            match self {
+                Self::Nil => f.write_str("nil"),
+                Self::Bool(value) => f.write_str(&format!("{}", value)),
+                Self::Number(value) => f.write_str(&format!("{}", value)),
+                Self::String(ptr) => {
+                    write!(f, "{}", &**ptr)
                 }
-            },
-            Self::Function(ptr) => unsafe {
-                // SAFETY: Function pointers are allocated by GC and guaranteed to be valid
-                // as long as the GC is alive, which outlives all Value instances
-                if let Some(func) = ptr.as_ref() {
-                    write!(f, "<fn {}>", func.name)
-                } else {
-                    write!(f, "<invalid function>")
+                Self::Function(ptr) => {
+                    write!(f, "<fn {}>", (**ptr).name)
                 }
-            },
-            Self::Closure(ptr) => unsafe {
-                // SAFETY: Closure pointers are allocated by GC and guaranteed to be valid
-                // as long as the GC is alive, which outlives all Value instances
-                if let Some(closure) = ptr.as_ref() {
-                    write!(f, "<fn {}>", closure.name())
-                } else {
-                    write!(f, "<invalid closure>")
+                Self::Closure(ptr) => {
+                    write!(f, "<fn {}>", (**ptr).name())
                 }
-            },
-            Self::NativeFunc(ptr) => unsafe {
-                // SAFETY: NativeFunc pointers are allocated by GC and guaranteed to be valid
-                // as long as the GC is alive, which outlives all Value instances
-                if let Some(native) = ptr.as_ref() {
-                    write!(f, "<native fn {}>", native.name)
-                } else {
-                    write!(f, "<invalid native fn>")
+                Self::NativeFunc(ptr) => {
+                    write!(f, "<native fn {}>", (**ptr).name)
                 }
-            },
-            Self::Upvalue(ptr) => unsafe {
-                // SAFETY: Upvalue pointers are allocated by GC and guaranteed to be valid
-                // as long as the GC is alive, which outlives all Value instances
-                if let Some(upvalue) = ptr.as_ref() {
-                    write!(f, "<upvalue {:p}>", upvalue.location)
-                } else {
-                    write!(f, "<invalid upvalue>")
+                Self::Upvalue(ptr) => {
+                    write!(f, "<upvalue {:p}>", (**ptr).location)
                 }
-            },
+                Self::Class(ptr) => {
+                    write!(f, "<class {}>", (**ptr).name)
+                }
+                Self::ClassInstance(ptr) => {
+                    write!(f, "<instance of {}>", (*(**ptr).class).name)
+                }
+            }
         }
     }
 }

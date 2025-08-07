@@ -1,1 +1,2 @@
-[line 1] Error at 'class': Expected expression
+Runtime error: Can only call functions and classes
+[line 4] in <main>

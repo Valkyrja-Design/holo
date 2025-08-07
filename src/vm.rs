@@ -1,3 +1,5 @@
+use crate::value::{Class, ClassInstance};
+
 use super::{
     chunk::{Chunk, OpCode},
     gc,
@@ -5,7 +7,7 @@ use super::{
     value::{Closure, Function, Upvalue, Value},
 };
 use log::debug;
-use std::io::Write;
+use std::{io::Write, time::Instant};
 
 #[derive(Clone, Copy)]
 struct CallFrame {
@@ -336,8 +338,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     let closure = Closure::new(func as *mut Function, upvalue_count);
                     let closure_ptr = self.gc.alloc_closure_ptr(closure);
                     let closure = unsafe {
-                        // SAFETY: Closure pointers are allocated by GC and remain valid
-                        // for the lifetime of the GC which outlives all Closure references
+                        // SAFETY: GC guarantees that all pointers are valid
                         &mut *closure_ptr
                     };
 
@@ -345,7 +346,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     self.push(Value::Closure(closure_ptr))?;
 
                     // Attempt to trigger a garbage collection cycle
-                    self.attempt_gc();
+                    self.collect_garbage();
 
                     // Initialize the upvalues
                     for _ in 0..upvalue_count {
@@ -395,6 +396,56 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     self.close_upvalues(self.stack.len() - 1);
                     self.stack.pop();
                 }
+                OpCode::Class => {
+                    let name = self.read_constant();
+                    let name = name.as_string().expect("Class name must be a string");
+
+                    let class = self.gc.alloc_class_ptr(Class::new(name.to_string()));
+
+                    self.push(Value::Class(class))?;
+
+                    // Attempt to trigger a garbage collection cycle
+                    self.collect_garbage();
+                }
+                OpCode::GetProperty => {
+                    let name = self.read_constant();
+                    let name = name.as_string().expect("Property name must be a string");
+
+                    // Get the field from the instance
+                    let instance = self.stack.last().unwrap().as_class_instance();
+                    if instance.is_none() {
+                        self.runtime_error("Property must be accessed on a class instance");
+                        return None;
+                    }
+
+                    let instance = instance.unwrap();
+                    let field = instance.fields.get(name);
+
+                    if field.is_none() {
+                        self.runtime_error(&format!("Undefined property '{}'", name));
+                        return None;
+                    }
+
+                    *self.stack.last_mut().unwrap() = *field.unwrap();
+                }
+                OpCode::SetProperty => {
+                    let name = self.read_constant();
+                    let name = name.as_string().expect("Property name must be a string");
+
+                    // Set the field on the instance
+                    let value = self.stack.pop().unwrap();
+                    let instance = self.stack.last().unwrap().as_class_instance_mut();
+
+                    if instance.is_none() {
+                        self.runtime_error("Property must be accessed on a class instance");
+                        return None;
+                    }
+
+                    let instance = instance.unwrap();
+
+                    instance.fields.insert(name.to_string(), value);
+                    *self.stack.last_mut().unwrap() = value;
+                }
             }
         }
     }
@@ -406,40 +457,43 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
 
         let callee = self.stack[self.stack.len() - (arg_count as usize) - 1];
 
-        match callee {
-            Value::Closure(closure) => {
-                let arity = unsafe {
-                    // SAFETY: Closure pointers are allocated by GC and remain valid
-                    // for the lifetime of the GC which outlives all Value references
-                    (*closure).arity()
-                };
+        unsafe {
+            // SAFETY: GC guarantees that all pointers are valid
+            match callee {
+                Value::Closure(closure) => {
+                    let arity = (*closure).arity();
 
-                self.call(closure, arity, arg_count)
-            }
-            Value::NativeFunc(native) => {
-                let args = &self.stack[self.stack.len() - (arg_count as usize)..];
-                let ret = unsafe {
-                    // SAFETY: NativeFunc pointers are allocated by GC and remain valid
-                    // for the lifetime of the GC which outlives all Value references
-                    (*native).call(args)
-                };
+                    self.call(closure, arity, arg_count)
+                }
+                Value::NativeFunc(native) => {
+                    let args = &self.stack[self.stack.len() - (arg_count as usize)..];
+                    let ret = (*native).call(args);
 
-                match ret {
-                    Ok(value) => {
-                        self.stack
-                            .truncate(self.stack.len() - (arg_count as usize) - 1);
-                        self.push(value)?;
-                        Some(())
-                    }
-                    Err(err) => {
-                        self.runtime_error(&err);
-                        None
+                    match ret {
+                        Ok(value) => {
+                            self.stack
+                                .truncate(self.stack.len() - (arg_count as usize) - 1);
+                            self.push(value)?;
+                            Some(())
+                        }
+                        Err(err) => {
+                            self.runtime_error(&err);
+                            None
+                        }
                     }
                 }
-            }
-            _ => {
-                self.runtime_error("Can only call functions and classes");
-                None
+                Value::Class(class) => {
+                    let instance = self.gc.alloc_class_instance_ptr(ClassInstance::new(class));
+                    self.push(Value::ClassInstance(instance))?;
+
+                    // Attempt to trigger a garbage collection cycle
+                    self.collect_garbage();
+                    Some(())
+                }
+                _ => {
+                    self.runtime_error("Can only call functions and classes");
+                    None
+                }
             }
         }
     }
@@ -598,8 +652,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 Some(())
             }
             (Value::String(left), Value::String(right)) => unsafe {
-                // SAFETY: String pointers are allocated by GC and remain valid
-                // for the lifetime of the GC which outlives all Value references
+                // SAFETY: GC guarantees that all pointers are valid
                 let mut concatenated_str: String =
                     String::with_capacity((**left).len() + (*right).len());
                 concatenated_str.push_str(&**left);
@@ -610,7 +663,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     .intern_owned(concatenated_str, &mut self.gc);
 
                 // Attempt to trigger a garbage collection cycle
-                self.attempt_gc();
+                self.collect_garbage();
 
                 Some(())
             },
@@ -667,7 +720,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 );
 
                 // Attempt to trigger a garbage collection cycle
-                self.attempt_gc();
+                self.collect_garbage();
 
                 upvalue
             }
@@ -684,8 +737,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         // Close them
         for upvalue in self.open_upvalues.drain(pos..) {
             unsafe {
-                // SAFETY: Upvalue pointers are allocated by GC and remain valid
-                // for the lifetime of the GC which outlives all Value references
+                // SAFETY: GC guarantees that all pointers are valid
 
                 // Move the stack value to the upvalue's closed field
                 // and set the upvalue's location to the closed field
@@ -750,8 +802,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
     // TRY: Stash the current frame's chunk in a local variable
     fn chunk(&self) -> &Chunk {
         unsafe {
-            // SAFETY: Closure function pointers are allocated by GC and remain valid
-            // for the lifetime of the GC which outlives all Closure references
+            // SAFETY: GC guarantees that all pointers are valid
             &(*self.current_frame.closure).chunk()
         }
     }
@@ -766,8 +817,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
 
     fn upvalues(&self) -> &Vec<*mut Upvalue> {
         unsafe {
-            // SAFETY: Closure pointers are allocated by GC and remain valid
-            // for the lifetime of the GC which outlives all Closure references
+            // SAFETY: GC guarantees that all pointers are valid
             &(*self.current_frame.closure).upvalues
         }
     }
@@ -838,8 +888,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
 
         for frame in rev_frame_iter.take(STACK_TRACE_SIZE) {
             let function = unsafe {
-                // SAFETY: Closure function pointers are allocated by GC and remain valid
-                // for the lifetime of the GC which outlives all Closure references
+                // SAFETY: GC guarantees that all pointers are valid
                 (*frame.closure).function()
             };
 

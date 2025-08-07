@@ -47,6 +47,9 @@ pub enum OpCode {
     SetUpvalue,
     SetUpvalueLong,
     CloseUpvalue,
+    Class,
+    GetProperty,
+    SetProperty,
 }
 
 impl From<u8> for OpCode {
@@ -97,6 +100,9 @@ impl From<u8> for OpCode {
             42 => Self::SetUpvalue,
             43 => Self::SetUpvalueLong,
             44 => Self::CloseUpvalue,
+            45 => Self::Class,
+            46 => Self::GetProperty,
+            47 => Self::SetProperty,
             _ => unreachable!("invalid opcode!"),
         }
     }
@@ -150,6 +156,9 @@ impl From<OpCode> for u8 {
             OpCode::SetUpvalue => 42,
             OpCode::SetUpvalueLong => 43,
             OpCode::CloseUpvalue => 44,
+            OpCode::Class => 45,
+            OpCode::GetProperty => 46,
+            OpCode::SetProperty => 47,
         }
     }
 }

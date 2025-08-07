@@ -1,2 +1,2 @@
-"got method"
-"arg"
+[line 2] Error at 'bar': Expected '}' after class body
+[line 4] Error at '}': Expected expression

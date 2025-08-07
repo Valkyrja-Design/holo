@@ -1,1 +1,2 @@
-[line 2] Expected a class instance
+Runtime error: Property must be accessed on a class instance
+[line 2] in <main>
