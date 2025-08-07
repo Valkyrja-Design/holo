@@ -1,0 +1,46 @@
+"stretch tree of depth:"
+15
+"check:"
+-1
+"num trees:"
+32768
+"depth:"
+4
+"check:"
+-32768
+"num trees:"
+8192
+"depth:"
+6
+"check:"
+-8192
+"num trees:"
+2048
+"depth:"
+8
+"check:"
+-2048
+"num trees:"
+512
+"depth:"
+10
+"check:"
+-512
+"num trees:"
+128
+"depth:"
+12
+"check:"
+-128
+"num trees:"
+32
+"depth:"
+14
+"check:"
+-32
+"long lived tree of depth:"
+14
+"check:"
+-1
+"elapsed:"
+48.654
