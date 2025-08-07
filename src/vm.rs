@@ -1,4 +1,4 @@
-use super::{chunk, disassembler, value};
+use super::{chunk, compiler, disassembler, value};
 
 pub enum InterpretResult {
     InterpretOk,
@@ -14,7 +14,7 @@ pub struct VM {
 }
 
 impl VM {
-    fn new(source: String) -> Self {
+    pub fn new(source: String) -> Self {
         VM {
             source,
             chunk: chunk::Chunk::default(),
@@ -23,7 +23,11 @@ impl VM {
         }
     }
 
-    fn interpret(&mut self) -> InterpretResult {
+    pub fn interpret(&mut self) -> InterpretResult {
+        let mut compiler = compiler::Compiler::new(&self.source);
+
+        compiler.compile();
+
         loop {
             match self.read_opcode() {
                 chunk::OpCode::OpConstant => {

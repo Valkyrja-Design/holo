@@ -4,7 +4,10 @@ use std::fs;
 
 fn run(path: &str) {
     match fs::read_to_string(path) {
-        Ok(source) => {}
+        Ok(source) => {
+            let mut vm = vm::VM::new(source);
+            let _err = vm.interpret();
+        }
         Err(err) => eprintln!("{err}"),
     }
 }
