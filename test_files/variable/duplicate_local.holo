@@ -1,0 +1,5 @@
+{
+  var a = "value";
+  print a;
+  var a = "other"; // Error at 'a': Already a variable with this name in this scope.
+}

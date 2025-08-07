@@ -1,0 +1,56 @@
+mod common;
+
+use std::env;
+use std::fs;
+use std::io::Write;
+use std::path::PathBuf;
+
+#[test]
+fn variable() {
+    // base directory containing the test inputs and expected outputs
+    let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("test_files")
+        .join("variable");
+    let expected_dir = base_dir.join("expected");
+
+    for entry in fs::read_dir(&base_dir).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+
+        // skip the `expected` subdirectory
+        if path.is_dir() {
+            continue;
+        }
+
+        let test_name = path.file_name().unwrap().to_string_lossy().to_string();
+        let mut output_stream: Vec<u8> = Vec::new();
+        let mut err_stream: Vec<u8> = Vec::new();
+
+        // run the interpreter
+        common::interpret(path.clone(), &mut output_stream, &mut err_stream);
+
+        let errors = String::from_utf8(err_stream).unwrap();
+        let output = String::from_utf8(output_stream).unwrap();
+
+        // load the expected output
+        let expected_path = expected_dir.join(path.file_stem().unwrap());
+        let expected = fs::read_to_string(&expected_path).unwrap_or_else(|e| {
+            panic!(
+                "Could not read expected output file for `{}`: {}",
+                test_name, e
+            )
+        });
+
+        let full_output = errors.trim_end().to_owned() + "\n" + output.trim_end();
+
+        // let mut file = fs::File::create(expected_path).unwrap();
+        // let _err = file.write(full_output.trim().as_bytes());
+
+        assert_eq!(
+            full_output.trim(),
+            expected.trim(),
+            "Output mismatch for test `{}`",
+            path.as_os_str().to_str().unwrap(),
+        );
+    }
+}

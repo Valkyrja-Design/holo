@@ -154,12 +154,10 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    #[inline]
     fn peek(&mut self) -> Option<char> {
         self.lookahead[0].map(|(_, c)| c)
     }
 
-    #[inline]
     fn peek_next(&mut self) -> Option<char> {
         self.lookahead[1].map(|(_, c)| c)
     }
@@ -171,7 +169,10 @@ impl<'a> Scanner<'a> {
                     self.advance(); // Consume the closing quote
                     return self.make_token(TokenKind::String);
                 }
-                Some(_) => {
+                Some(c) => {
+                    if c == '\n' {
+                        self.curr_line += 1;
+                    }
                     self.advance();
                 }
                 None => {
@@ -353,11 +354,14 @@ impl<'a> Scanner<'a> {
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::path::PathBuf;
 
     #[test]
     fn scanner_tests() {
-        let dir = "./tests/scanning/";
-        let entries = std::fs::read_dir(dir).unwrap();
+        let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test_files")
+            .join("scanning");
+        let entries = std::fs::read_dir(&base_dir).unwrap();
 
         for entry in entries {
             let entry = entry.unwrap();

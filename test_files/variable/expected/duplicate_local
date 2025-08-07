@@ -1,0 +1,2 @@
+[line 4] Error at 'a': Redeclaration of variable 'a'
+[line 5] Error at '}': Expected expression

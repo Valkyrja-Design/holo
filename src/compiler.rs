@@ -7,6 +7,7 @@ use super::{
     token::{Token, TokenKind},
     value::Value,
 };
+use std::io::Write;
 
 struct CompileError<'a> {
     token: Token<'a>,
@@ -72,7 +73,7 @@ struct Local<'a> {
     depth: i32,
 }
 
-pub struct Compiler<'a, 'b> {
+pub struct Compiler<'a, 'b, W: Write> {
     source: &'a str,
     scanner: Scanner<'a>,
     curr_token: Token<'a>,
@@ -84,16 +85,17 @@ pub struct Compiler<'a, 'b> {
     locals: Vec<Local<'a>>,
     curr_depth: i32,
     had_error: bool,
+    err_stream: &'b mut W,
 }
 
-struct ParseRule<'a, 'b> {
-    prefix_rule: Option<fn(&mut Compiler<'a, 'b>, bool) -> Result<(), CompileError<'a>>>,
-    infix_rule: Option<fn(&mut Compiler<'a, 'b>, bool) -> Result<(), CompileError<'a>>>,
+struct ParseRule<'a, 'b, W: Write> {
+    prefix_rule: Option<fn(&mut Compiler<'a, 'b, W>, bool) -> Result<(), CompileError<'a>>>,
+    infix_rule: Option<fn(&mut Compiler<'a, 'b, W>, bool) -> Result<(), CompileError<'a>>>,
     precedence: Precedence,
 }
 
-impl<'a, 'b> Compiler<'a, 'b> {
-    const RULES: [ParseRule<'a, 'b>; 50] = [
+impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
+    const RULES: [ParseRule<'a, 'b, W>; 50] = [
         ParseRule {
             prefix_rule: Some(Self::grouping),
             infix_rule: None,
@@ -350,6 +352,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         source: &'a str,
         gc: &'b mut GC,
         str_intern_table: &'b mut StringInternTable,
+        err_stream: &'b mut W,
     ) -> Self {
         // initialize with dummy tokens
         Compiler {
@@ -372,6 +375,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             locals: Vec::new(),
             curr_depth: 0,
             had_error: false,
+            err_stream,
         }
     }
 
@@ -726,19 +730,16 @@ impl<'a, 'b> Compiler<'a, 'b> {
     }
 
     fn advance(&mut self) -> Result<(), CompileError<'a>> {
-        self.prev_token = self.curr_token.clone();
+        let token = self.scanner.scan_token();
 
-        match self.scanner.scan_token() {
-            Token {
-                kind: TokenKind::Error,
-                lexeme: err,
-                line: _,
-            } => Err(CompileError::new(self.prev_token.clone(), err.to_string())),
-            token => {
-                self.curr_token = token;
-                Ok(())
-            }
+        self.prev_token = self.curr_token.clone();
+        self.curr_token = token.clone();
+
+        if let TokenKind::Error = token.kind {
+            return Err(CompileError::new(token.clone(), token.lexeme.to_string()));
         }
+
+        Ok(())
     }
 
     fn consume(&mut self, expected: TokenKind, err: &'a str) -> Result<(), CompileError<'a>> {
@@ -894,20 +895,18 @@ impl<'a, 'b> Compiler<'a, 'b> {
         )
     }
 
-    fn get_rule(&self, kind: TokenKind) -> &ParseRule<'a, 'b> {
+    fn get_rule(&self, kind: TokenKind) -> &ParseRule<'a, 'b, W> {
         &Self::RULES[kind.as_usize()]
     }
 
     fn report_err(&mut self, err: CompileError<'a>) {
         self.had_error = true;
-        eprint!("[line {}] Error", err.token.line);
-
+        write!(self.err_stream, "[line {}] Error", err.token.line).unwrap();
         match err.token.kind {
-            TokenKind::Eof => eprint!(" at end of file"),
+            TokenKind::Eof => write!(self.err_stream, " at end of file").unwrap(),
             TokenKind::Error => {}
-            _ => eprint!(" at '{}'", err.token.lexeme),
+            _ => write!(self.err_stream, " at '{}'", err.token.lexeme).unwrap(),
         }
-
-        eprintln!(": {}", err.err);
+        writeln!(self.err_stream, ": {}", err.err).unwrap();
     }
 }

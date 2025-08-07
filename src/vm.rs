@@ -5,6 +5,7 @@ use super::{
     table::StringInternTable,
     value::Value,
 };
+use std::io::Write;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum InterpretResult {
@@ -13,7 +14,7 @@ pub enum InterpretResult {
     RuntimeError,
 }
 
-pub struct VM {
+pub struct VM<'a, T: Write, U: Write> {
     chunk: Chunk,
     ip: usize,
     stack: Vec<Value>,
@@ -21,14 +22,18 @@ pub struct VM {
     str_intern_table: StringInternTable,
     globals: Vec<Option<Value>>, // None means the variable is undefined
     global_var_names: Vec<String>,
+    output_stream: &'a mut T,
+    err_stream: &'a mut U,
 }
 
-impl VM {
+impl<'a, T: Write, U: Write> VM<'a, T, U> {
     pub fn new(
         chunk: Chunk,
         gc: gc::GC,
         str_intern_table: StringInternTable,
         global_var_names: Vec<String>,
+        output_stream: &'a mut T,
+        err_stream: &'a mut U,
     ) -> Self {
         VM {
             chunk, // Store the reference
@@ -38,6 +43,8 @@ impl VM {
             str_intern_table,
             globals: vec![None; global_var_names.len()],
             global_var_names,
+            output_stream,
+            err_stream,
         }
     }
 
@@ -76,7 +83,7 @@ impl VM {
                 OpCode::Not => match self.stack.last_mut() {
                     Some(Value::Bool(value)) => *value = !*value,
                     Some(_) => {
-                        return self.runtime_error("Operand to '-' must be a bool");
+                        return self.runtime_error("Operand to '!' must be a bool");
                     }
                     _ => {
                         return InterpretResult::RuntimeError;
@@ -202,7 +209,7 @@ impl VM {
                         return InterpretResult::RuntimeError;
                     }
 
-                    println!("{:#?}", self.stack.pop().unwrap());
+                    writeln!(self.output_stream, "{:#?}", self.stack.pop().unwrap());
                 }
                 OpCode::Pop => {
                     if self.stack.is_empty() {
@@ -460,11 +467,11 @@ impl VM {
         idx
     }
 
-    fn runtime_error(&self, err: &str) -> InterpretResult {
+    fn runtime_error(&mut self, err: &str) -> InterpretResult {
         let instr = self.ip - 1;
         let line = self.chunk.get_line_of(instr);
 
-        eprintln!("[line {line}] Runtime error: {err}");
+        let _ = writeln!(self.err_stream, "[line {line}] Runtime error: {err}");
         InterpretResult::RuntimeError
     }
 }

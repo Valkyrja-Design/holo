@@ -1,0 +1,2 @@
+print "undefined global";
+unknown = "what"; // expect runtime error: Undefined variable 'unknown'.

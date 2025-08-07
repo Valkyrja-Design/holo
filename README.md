@@ -14,7 +14,8 @@ print -
 ```
 - [ ] fix error token in `emit_opcode_with*` functions
 - [x] build a symbol table for globals
-- [ ] multi-line strings
+- [x] multi-line strings
+- [ ] const vars
 - [ ] multi-pass compilation
 - [ ] string interpolation
 - [ ] Better error messages
