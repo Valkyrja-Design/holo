@@ -1,2 +1,3 @@
-true
-false
+[line 2] Error at 'class': Expected expression
+[line 7] Error at '.': Expected ';' at the end of statement
+[line 13] Error at '.': Expected ';' at the end of statement

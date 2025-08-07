@@ -1,1 +1,2 @@
-[line 1] Incompatible operands to binary '>='
+Runtime error: Operands to '>=' must be numbers
+[line 1] in <main>

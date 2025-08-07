@@ -8,7 +8,7 @@ use std::path::PathBuf;
 fn clock() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    // base directory containing the test inputs and expected outputs
+    // Base directory containing the test inputs and expected outputs
     let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("test_files")
@@ -18,13 +18,13 @@ fn clock() {
     let mut output_stream: Vec<u8> = Vec::new();
     let mut err_stream: Vec<u8> = Vec::new();
 
-    // run the interpreter
+    // Run the interpreter
     common::interpret(path.clone(), &mut output_stream, &mut err_stream);
 
     let errors = String::from_utf8(err_stream).unwrap();
     let output = String::from_utf8(output_stream).unwrap();
 
-    // there should be no errors
+    // There should be no errors
     assert_eq!(errors.trim(), "");
 
     // and output should not be empty
@@ -35,7 +35,7 @@ fn clock() {
 fn clock_error() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    // base directory containing the test inputs and expected outputs
+    // Base directory containing the test inputs and expected outputs
     let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("test_files")
@@ -46,16 +46,16 @@ fn clock_error() {
     let mut output_stream: Vec<u8> = Vec::new();
     let mut err_stream: Vec<u8> = Vec::new();
 
-    // run the interpreter
+    // Run the interpreter
     common::interpret(path.clone(), &mut output_stream, &mut err_stream);
 
     let errors = String::from_utf8(err_stream).unwrap();
     let output = String::from_utf8(output_stream).unwrap();
 
-    // there should be no output
+    // There should be no output
     assert_eq!(output.trim(), "");
 
-    // load the expected output
+    // Load the expected output
     let test_name = path.file_name().unwrap().to_string_lossy().to_string();
     let expected_path = expected_dir.join(path.file_stem().unwrap());
     let expected = fs::read_to_string(&expected_path).unwrap_or_else(|e| {

@@ -1,8 +1,5 @@
+Runtime error: Operand to '!' must be a bool
+[line 5] in <main>
 false
 true
 true
-false
-true
-true
-false
-false

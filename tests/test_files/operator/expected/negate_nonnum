@@ -1,1 +1,2 @@
-[line 1] Expected a number as the operand to unary '-'
+Runtime error: Operand to '-' must be a number
+[line 1] in <main>

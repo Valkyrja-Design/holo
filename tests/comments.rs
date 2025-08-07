@@ -6,14 +6,14 @@ use std::io::Write;
 use std::path::PathBuf;
 
 #[test]
-fn while_stmt() {
+fn comments() {
     let _ = env_logger::builder().is_test(true).try_init();
 
     // Base directory containing the test inputs and expected outputs
     let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("test_files")
-        .join("while");
+        .join("comments");
     let expected_dir = base_dir.join("expected");
 
     for entry in fs::read_dir(&base_dir).unwrap() {
@@ -51,7 +51,7 @@ fn while_stmt() {
         let normalized_expected = expected.trim().replace("\r\n", "\n");
 
         // let mut file = fs::File::create(expected_path).unwrap();
-        // let _err = file.write(full_output.trim().as_bytes());
+        // let _err: Result<usize, std::io::Error> = file.write(full_output.trim().as_bytes());
 
         assert_eq!(
             normalized_output,

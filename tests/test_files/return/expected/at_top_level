@@ -1,1 +1,1 @@
-[line 1] return statement must be inside a function or method
+[line 1] Error at 'return': 'return' statement can only be used inside a function

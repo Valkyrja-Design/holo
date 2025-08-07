@@ -1,1 +1,3 @@
-"ok"
+[line 1] Error at 'class': Expected expression
+[line 5] Error at '}': Expected expression
+[line 8] Error at '.': Expected ';' at the end of statement

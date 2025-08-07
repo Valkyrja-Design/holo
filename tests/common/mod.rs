@@ -14,7 +14,7 @@ pub fn interpret<T: Write, U: Write>(path: PathBuf, output_stream: &mut T, err_s
                 let mut sym_table = sym_table::SymbolTable::new();
                 let native_funcs = native::get_native_funcs();
 
-                // define native functions as global variables
+                // Define native functions as global variables
                 for native_func in &native_funcs {
                     sym_table.declare(&native_func.name);
                     globals.push(Some(gc.alloc_native(native_func.clone())));
@@ -31,7 +31,7 @@ pub fn interpret<T: Write, U: Write>(path: PathBuf, output_stream: &mut T, err_s
                 let compiled_function = compiler.compile();
                 let global_var_names = sym_table.names_as_owned();
 
-                // we need to push `None` for each global variable that is not a native function
+                // We need to push `None` for each global variable that is not a native function
                 for _ in &global_var_names[native_funcs.len()..] {
                     globals.push(None);
                 }

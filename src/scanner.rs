@@ -402,7 +402,7 @@ mod tests {
             // // write output to file
             // let mut expected_file = std::fs::File::create(expected_file).unwrap();
 
-            // expected_file.write_all(format!("{tokens:#?}\n").as_bytes());
+            // expected_file.write(format!("{tokens:#?}\n").as_bytes());
         }
     }
 }

@@ -1,1 +1,2 @@
-[line 1] Expected number, boolean or string as the right operand to binary '+'
+Runtime error: Operands to '+' must be two numbers or strings
+[line 1] in <main>

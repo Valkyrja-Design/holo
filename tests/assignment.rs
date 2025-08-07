@@ -10,7 +10,7 @@ use std::path::PathBuf;
 fn assignment() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    // base directory containing the test inputs and expected outputs
+    // Base directory containing the test inputs and expected outputs
     let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("test_files")
@@ -21,7 +21,7 @@ fn assignment() {
         let entry = entry.unwrap();
         let path = entry.path();
 
-        // skip the `expected` subdirectory
+        // Skip the `expected` subdirectory
         if path.is_dir() {
             continue;
         }
@@ -32,13 +32,13 @@ fn assignment() {
         let mut output_stream: Vec<u8> = Vec::new();
         let mut err_stream: Vec<u8> = Vec::new();
 
-        // run the interpreter
+        // Run the interpreter
         common::interpret(path.clone(), &mut output_stream, &mut err_stream);
 
         let errors = String::from_utf8(err_stream).unwrap();
         let output = String::from_utf8(output_stream).unwrap();
 
-        // load the expected output
+        // Load the expected output
         let expected_path = expected_dir.join(path.file_stem().unwrap());
         let expected = fs::read_to_string(&expected_path).unwrap_or_else(|e| {
             panic!(

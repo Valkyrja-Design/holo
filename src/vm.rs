@@ -20,6 +20,7 @@ struct OpenUpvalue {
 }
 
 static VEC_SIZE: usize = 1024; // Default vec size for `VM::stack` and `VM::open_upvalues`
+static STACK_TRACE_SIZE: usize = 10; // Number of frames to print in a stack trace
 
 pub struct VM<'a, T: Write, U: Write> {
     call_stack: Vec<CallFrame>,
@@ -71,20 +72,20 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
             match self.read_opcode() {
                 OpCode::Constant => {
                     let constant = self.read_constant();
-                    self.push(constant);
+                    self.push(constant)?;
                 }
                 OpCode::ConstantLong => {
                     let constant = self.read_constant_long();
-                    self.push(constant);
+                    self.push(constant)?;
                 }
                 OpCode::Nil => {
-                    self.push(Value::Nil);
+                    self.push(Value::Nil)?;
                 }
                 OpCode::True => {
-                    self.push(Value::Bool(true));
+                    self.push(Value::Bool(true))?;
                 }
                 OpCode::False => {
-                    self.push(Value::Bool(false));
+                    self.push(Value::Bool(false))?;
                 }
                 OpCode::Return => {
                     // Pop off the return value
@@ -105,7 +106,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     // Otherwise, pop off the arguments and the callee from the stack,
                     // push the return value and set the current frame to the top of the call stack
                     self.stack.truncate(self.current_frame.stack_start - 1);
-                    self.push(ret);
+                    self.push(ret)?;
                     self.current_frame = self.call_stack.last().unwrap().clone();
                 }
                 OpCode::Negate => match self.stack.last_mut() {
@@ -130,10 +131,10 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 },
                 OpCode::Add => self.binary_add()?,
                 OpCode::Sub => {
-                    self.binary_number_op(|l, r| *l -= r, "Operands to '-' must be numbers")?
+                    self.binary_number_op(|l, r| *l -= r, "Operands to '-' must be numbers")?;
                 }
                 OpCode::Mult => {
-                    self.binary_number_op(|l, r| *l *= r, "Operands to '*' must be numbers")?
+                    self.binary_number_op(|l, r| *l *= r, "Operands to '*' must be numbers")?;
                 }
                 OpCode::Divide => self.binary_divide()?,
                 OpCode::Equal => {
@@ -157,44 +158,28 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     *left = Value::Bool(*left != right);
                 }
                 OpCode::Greater => {
-                    if self.stack.len() < 2 {
-                        return None;
-                    }
-
-                    let right = self.stack.pop().unwrap();
-                    let left = self.stack.last_mut().unwrap();
-
-                    *left = Value::Bool(*left > right);
+                    self.binary_number_ordering_op(
+                        |l, r| l > r,
+                        "Operands to '>' must be numbers",
+                    )?;
                 }
                 OpCode::GreaterEqual => {
-                    if self.stack.len() < 2 {
-                        return None;
-                    }
-
-                    let right = self.stack.pop().unwrap();
-                    let left = self.stack.last_mut().unwrap();
-
-                    *left = Value::Bool(*left >= right);
+                    self.binary_number_ordering_op(
+                        |l, r| l >= r,
+                        "Operands to '>=' must be numbers",
+                    )?;
                 }
                 OpCode::Less => {
-                    if self.stack.len() < 2 {
-                        return None;
-                    }
-
-                    let right = self.stack.pop().unwrap();
-                    let left = self.stack.last_mut().unwrap();
-
-                    *left = Value::Bool(*left < right);
+                    self.binary_number_ordering_op(
+                        |l, r| l < r,
+                        "Operands to '<' must be numbers",
+                    )?;
                 }
                 OpCode::LessEqual => {
-                    if self.stack.len() < 2 {
-                        return None;
-                    }
-
-                    let right = self.stack.pop().unwrap();
-                    let left = self.stack.last_mut().unwrap();
-
-                    *left = Value::Bool(*left <= right);
+                    self.binary_number_ordering_op(
+                        |l, r| l <= r,
+                        "Operands to '<=' must be numbers",
+                    )?;
                 }
                 OpCode::Ternary => {
                     if self.stack.len() < 3 {
@@ -268,12 +253,12 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 OpCode::GetLocal => {
                     let index = self.read_int8();
 
-                    self.get_local(index);
+                    self.get_local(index)?
                 }
                 OpCode::GetLocalLong => {
                     let index = self.read_int24();
 
-                    self.get_local(index);
+                    self.get_local(index)?
                 }
                 OpCode::SetLocal => {
                     let index = self.read_int8();
@@ -357,7 +342,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     };
 
                     // Push the closure first so that it can be captured by upvalues
-                    self.push(Value::Closure(closure_ptr));
+                    self.push(Value::Closure(closure_ptr))?;
 
                     // Attempt to trigger a garbage collection cycle
                     self.attempt_gc();
@@ -386,7 +371,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     unsafe {
                         // SAFETY: Upvalue pointers are allocated by GC and remain valid
                         // for the lifetime of the GC which outlives all Value references
-                        self.push(*(*upvalue).location);
+                        self.push(*(*upvalue).location)?;
                     }
                 }
                 OpCode::GetUpvalueLong => {
@@ -443,7 +428,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     Ok(value) => {
                         self.stack
                             .truncate(self.stack.len() - (arg_count as usize) - 1);
-                        self.push(value);
+                        self.push(value)?;
                         Some(())
                     }
                     Err(err) => {
@@ -502,7 +487,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
     fn get_global(&mut self, index: usize) -> Option<()> {
         match self.globals.get(index) {
             Some(Some(value)) => {
-                self.push(*value);
+                self.push(*value)?;
                 Some(())
             }
             _ => {
@@ -524,7 +509,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         match self.globals.get_mut(index) {
             Some(Some(value)) => {
                 *value = to;
-                self.push(to);
+                self.push(to)?;
                 Some(())
             }
             _ => {
@@ -536,10 +521,10 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         }
     }
 
-    fn get_local(&mut self, index: usize) {
+    fn get_local(&mut self, index: usize) -> Option<()> {
         // Index is relative to the current frame
         let abs_index = self.current_frame.stack_start + index;
-        self.push(self.stack[abs_index]);
+        self.push(self.stack[abs_index])
     }
 
     fn set_local(&mut self, index: usize) -> Option<()> {
@@ -567,6 +552,29 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         match (left, right) {
             (Value::Number(left), Value::Number(right)) => {
                 op(left, right);
+                Some(())
+            }
+            _ => {
+                self.runtime_error(err);
+                None
+            }
+        }
+    }
+
+    fn binary_number_ordering_op<F>(&mut self, op: F, err: &str) -> Option<()>
+    where
+        F: FnOnce(f64, f64) -> bool,
+    {
+        if self.stack.len() < 2 {
+            return None;
+        }
+
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.last_mut().unwrap();
+
+        match (&left, right) {
+            (Value::Number(l), Value::Number(r)) => {
+                *left = Value::Bool(op(*l, r));
                 Some(())
             }
             _ => {
@@ -622,10 +630,6 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         let left = self.stack.last_mut().unwrap();
 
         match (left, right) {
-            (Value::Number(_), Value::Number(0.0)) => {
-                self.runtime_error("Division by 0");
-                None
-            }
             (Value::Number(left), Value::Number(right)) => {
                 *left /= right;
                 Some(())
@@ -832,7 +836,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         let _ = writeln!(self.err_stream, "Runtime error: {err}");
         let rev_frame_iter = self.call_stack.iter().rev();
 
-        for frame in rev_frame_iter {
+        for frame in rev_frame_iter.take(STACK_TRACE_SIZE) {
             let function = unsafe {
                 // SAFETY: Closure function pointers are allocated by GC and remain valid
                 // for the lifetime of the GC which outlives all Closure references
