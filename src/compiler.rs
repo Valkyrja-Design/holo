@@ -1,21 +1,11 @@
 use super::{
     chunk::{Chunk, OpCode},
     gc,
-    object::Object,
+    interntable::StringInternTable,
     scanner,
     token::{Token, TokenKind},
     value::Value,
 };
-
-pub struct Compiler<'a, 'b> {
-    source: &'a str,
-    scanner: scanner::Scanner<'a>,
-    curr_token: Token<'a>,
-    prev_token: Token<'a>,
-    chunk: Chunk,
-    gc: &'b mut gc::GC,
-    had_error: bool,
-}
 
 struct CompileError<'a> {
     token: Token<'a>,
@@ -76,14 +66,25 @@ impl std::ops::Add<usize> for Precedence {
     }
 }
 
-struct ParseRule<'a, 'b> {
-    prefix_rule: Option<fn(&mut Compiler<'a, 'b>) -> Result<(), CompileError<'a>>>,
-    infix_rule: Option<fn(&mut Compiler<'a, 'b>) -> Result<(), CompileError<'a>>>,
+pub struct Compiler<'a, 'b, 'c> {
+    source: &'a str,
+    scanner: scanner::Scanner<'a>,
+    curr_token: Token<'a>,
+    prev_token: Token<'a>,
+    chunk: Chunk,
+    gc: &'b mut gc::GC,
+    str_intern_table: &'c mut StringInternTable,
+    had_error: bool,
+}
+
+struct ParseRule<'a, 'b, 'c> {
+    prefix_rule: Option<fn(&mut Compiler<'a, 'b, 'c>) -> Result<(), CompileError<'a>>>,
+    infix_rule: Option<fn(&mut Compiler<'a, 'b, 'c>) -> Result<(), CompileError<'a>>>,
     precedence: Precedence,
 }
 
-impl<'a, 'b> Compiler<'a, 'b> {
-    const RULES: [ParseRule<'a, 'b>; 50] = [
+impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
+    const RULES: [ParseRule<'a, 'b, 'c>; 50] = [
         ParseRule {
             prefix_rule: Some(Self::grouping),
             infix_rule: None,
@@ -336,7 +337,11 @@ impl<'a, 'b> Compiler<'a, 'b> {
         }, // Eof
     ];
 
-    pub fn new(source: &'a str, gc: &'b mut gc::GC) -> Self {
+    pub fn new(
+        source: &'a str,
+        gc: &'b mut gc::GC,
+        str_intern_table: &'c mut StringInternTable,
+    ) -> Self {
         // initialize with dummy tokens
         Compiler {
             source,
@@ -353,6 +358,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
             },
             chunk: Chunk::new(),
             gc,
+            str_intern_table,
             had_error: false,
         }
     }
@@ -414,9 +420,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
     fn string(&mut self) -> Result<(), CompileError<'a>> {
         match self.prev_token.kind {
             TokenKind::String => {
-                let str_ptr = self.gc.alloc(Object::Str(
-                    (&self.prev_token.lexeme[1..self.prev_token.lexeme.len() - 1]).to_owned(),
-                ));
+                let s = &self.prev_token.lexeme[1..self.prev_token.lexeme.len() - 1];
+                let str_ptr = self.str_intern_table.intern_slice(s, self.gc);
 
                 self.emit_constant(Value::Object(str_ptr))
             }
@@ -602,7 +607,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
         }
     }
 
-    fn get_rule(&self, kind: TokenKind) -> &ParseRule<'a, 'b> {
+    fn get_rule(&self, kind: TokenKind) -> &ParseRule<'a, 'b, 'c> {
         &Self::RULES[kind.as_usize()]
     }
 

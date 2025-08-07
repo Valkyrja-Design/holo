@@ -2,6 +2,7 @@ pub mod chunk;
 pub mod compiler;
 pub mod disassembler;
 pub mod gc;
+pub mod interntable;
 pub mod object;
 pub mod scanner;
 pub mod token;
@@ -14,10 +15,11 @@ pub fn interpret(path: &str) -> vm::InterpretResult {
     match fs::read_to_string(path) {
         Ok(source) => {
             let mut gc = gc::GC::new();
-            let compiler = compiler::Compiler::new(&source, &mut gc);
+            let mut str_intern_table = interntable::StringInternTable::new();
+            let compiler = compiler::Compiler::new(&source, &mut gc, &mut str_intern_table);
 
             if let Some(chunk) = compiler.compile() {
-                let mut vm = vm::VM::new(chunk, &mut gc);
+                let mut vm = vm::VM::new(chunk, &mut gc, str_intern_table);
                 vm.run()
             } else {
                 vm::InterpretResult::CompileError
@@ -82,5 +84,12 @@ mod tests {
         let path = "./tests/expressions/string_concate_error.holo";
 
         assert_eq!(interpret(path), vm::InterpretResult::RuntimeError);
+    }
+
+    #[test]
+    fn string_interning() {
+        let path = "./tests/expressions/string_interning.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::Ok);
     }
 }

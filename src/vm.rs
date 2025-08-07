@@ -1,6 +1,7 @@
 use super::{
     chunk::{Chunk, OpCode},
     gc,
+    interntable::StringInternTable,
     object::{ObjRef, Object},
     value::Value,
 };
@@ -17,15 +18,17 @@ pub struct VM<'a> {
     ip: usize,
     stack: Vec<Value>,
     gc: &'a mut gc::GC,
+    str_intern_table: StringInternTable,
 }
 
 impl<'a> VM<'a> {
-    pub fn new(chunk: Chunk, gc: &'a mut gc::GC) -> Self {
+    pub fn new(chunk: Chunk, gc: &'a mut gc::GC, str_intern_table: StringInternTable) -> Self {
         VM {
             chunk, // Store the reference
             ip: 0,
             stack: vec![],
             gc,
+            str_intern_table,
         }
     }
 
@@ -182,7 +185,8 @@ impl<'a> VM<'a> {
                             }
                         }
                         _ => {
-                            return self.runtime_error("Expected a boolean as ternary operator predicate");
+                            return self
+                                .runtime_error("Expected a boolean as ternary operator predicate");
                         }
                     }
                 }
@@ -223,13 +227,20 @@ impl<'a> VM<'a> {
                 InterpretResult::Ok
             }
             (Value::Object(left), Value::Object(right)) => unsafe {
-                // SAFETY: we only ever use gc allocated pointers which are
-                // made sure to be valid by the gc
+                println!("{:#?}", self.str_intern_table);
+
+                // SAFETY: we only ever use GC allocated pointers which are
+                // made sure to be valid by the GC
                 match (&**left, &*right) {
                     (Object::Str(l_str), Object::Str(r_str)) => {
+                        let mut concatenated_str: String =
+                            String::with_capacity(l_str.len() + r_str.len());
+                        concatenated_str.push_str(l_str);
+                        concatenated_str.push_str(r_str);
+
                         *left = self
-                            .gc
-                            .alloc(Object::Str(l_str.to_owned() + r_str.as_str()));
+                            .str_intern_table
+                            .intern_owned(concatenated_str, &mut self.gc);
                         InterpretResult::Ok
                     }
                     _ => self.runtime_error("Operands to '+' must be two numbers or strings"),
@@ -315,7 +326,8 @@ mod tests {
         chunk.write_opcode(OpCode::Return, 3);
 
         let mut gc = gc::GC::new();
-        let mut vm = VM::new(chunk, &mut gc);
+        let str_intern_table = StringInternTable::new();
+        let mut vm = VM::new(chunk, &mut gc, str_intern_table);
 
         assert_eq!(vm.run(), InterpretResult::Ok);
     }
@@ -346,7 +358,8 @@ mod tests {
         chunk.write_opcode(OpCode::Return, 7);
 
         let mut gc = gc::GC::new();
-        let mut vm = VM::new(chunk, &mut gc);
+        let str_intern_table = StringInternTable::new();
+        let mut vm = VM::new(chunk, &mut gc, str_intern_table);
 
         assert_eq!(vm.run(), InterpretResult::Ok);
     }
@@ -368,7 +381,8 @@ mod tests {
         chunk.write_opcode(OpCode::Return, 3);
 
         let mut gc = gc::GC::new();
-        let mut vm = VM::new(chunk, &mut gc);
+        let str_intern_table = StringInternTable::new();
+        let mut vm = VM::new(chunk, &mut gc, str_intern_table);
 
         assert_eq!(vm.run(), InterpretResult::Ok);
     }
