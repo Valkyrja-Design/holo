@@ -1,12 +1,12 @@
 space    tabs				newlines
 
 
+// this is a comment
+// it should be ignored
 
+/* this is a multi-line comment
+** this should be ignored too
+** no matter what /*
+*/
 
 end
-
-// expect: IDENTIFIER space null
-// expect: IDENTIFIER tabs null
-// expect: IDENTIFIER newlines null
-// expect: IDENTIFIER end null
-// expect: EOF  null

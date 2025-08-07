@@ -1,0 +1,27 @@
+[
+    Token {
+        token_kind: Identifier,
+        token: "space",
+        line: 1,
+    },
+    Token {
+        token_kind: Identifier,
+        token: "tabs",
+        line: 1,
+    },
+    Token {
+        token_kind: Identifier,
+        token: "newlines",
+        line: 1,
+    },
+    Token {
+        token_kind: Identifier,
+        token: "end",
+        line: 12,
+    },
+    Token {
+        token_kind: Eof,
+        token: "",
+        line: 13,
+    },
+]

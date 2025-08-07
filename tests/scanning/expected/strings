@@ -1,0 +1,17 @@
+[
+    Token {
+        token_kind: String,
+        token: "\"\"",
+        line: 1,
+    },
+    Token {
+        token_kind: String,
+        token: "\"string\"",
+        line: 2,
+    },
+    Token {
+        token_kind: Eof,
+        token: "",
+        line: 3,
+    },
+]

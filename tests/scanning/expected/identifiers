@@ -1,0 +1,47 @@
+[
+    Token {
+        token_kind: Identifier,
+        token: "andy",
+        line: 1,
+    },
+    Token {
+        token_kind: Identifier,
+        token: "formless",
+        line: 1,
+    },
+    Token {
+        token_kind: Identifier,
+        token: "fo",
+        line: 1,
+    },
+    Token {
+        token_kind: Identifier,
+        token: "_",
+        line: 1,
+    },
+    Token {
+        token_kind: Identifier,
+        token: "_123",
+        line: 1,
+    },
+    Token {
+        token_kind: Identifier,
+        token: "_abc",
+        line: 1,
+    },
+    Token {
+        token_kind: Identifier,
+        token: "ab123",
+        line: 1,
+    },
+    Token {
+        token_kind: Identifier,
+        token: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890_",
+        line: 2,
+    },
+    Token {
+        token_kind: Eof,
+        token: "",
+        line: 3,
+    },
+]

@@ -79,5 +79,16 @@ mod tests {
         chunk.write_opcode(chunk::OpCode::OpReturn, 7);
 
         disassemble(&chunk, "simple test chunk");
+
+        // expected:
+        // 0000 0001 OP_CONSTANT 1.23
+        // 0002 0001 OP_CONSTANT 1.23
+        // 0004 0002 OP_CONSTANT_LONG 125.25
+        // 0008 0002 OP_CONSTANT_LONG 125.25
+        // 0012 0003 OP_NEGATE
+        // 0013 0004 OP_ADD
+        // 0014 0005 OP_SUB
+        // 0015 0006 OP_DIVIDE
+        // 0016 0007 OP_RETURN
     }
 }

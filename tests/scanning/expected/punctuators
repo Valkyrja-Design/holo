@@ -1,0 +1,142 @@
+[
+    Token {
+        token_kind: LeftParen,
+        token: "(",
+        line: 1,
+    },
+    Token {
+        token_kind: RightParen,
+        token: ")",
+        line: 1,
+    },
+    Token {
+        token_kind: LeftBrace,
+        token: "{",
+        line: 1,
+    },
+    Token {
+        token_kind: RightBrace,
+        token: "}",
+        line: 1,
+    },
+    Token {
+        token_kind: Semicolon,
+        token: ";",
+        line: 1,
+    },
+    Token {
+        token_kind: Comma,
+        token: ",",
+        line: 1,
+    },
+    Token {
+        token_kind: Plus,
+        token: "+",
+        line: 1,
+    },
+    Token {
+        token_kind: Minus,
+        token: "-",
+        line: 1,
+    },
+    Token {
+        token_kind: Star,
+        token: "*",
+        line: 1,
+    },
+    Token {
+        token_kind: Bang,
+        token: "!",
+        line: 1,
+    },
+    Token {
+        token_kind: Slash,
+        token: "/",
+        line: 1,
+    },
+    Token {
+        token_kind: BangEqual,
+        token: "!=",
+        line: 1,
+    },
+    Token {
+        token_kind: EqualEqual,
+        token: "==",
+        line: 1,
+    },
+    Token {
+        token_kind: Equal,
+        token: "=",
+        line: 1,
+    },
+    Token {
+        token_kind: Less,
+        token: "<",
+        line: 1,
+    },
+    Token {
+        token_kind: Greater,
+        token: ">",
+        line: 1,
+    },
+    Token {
+        token_kind: LessEqual,
+        token: "<=",
+        line: 1,
+    },
+    Token {
+        token_kind: GreaterEqual,
+        token: ">=",
+        line: 1,
+    },
+    Token {
+        token_kind: PlusEqual,
+        token: "+=",
+        line: 1,
+    },
+    Token {
+        token_kind: MinusEqual,
+        token: "-=",
+        line: 1,
+    },
+    Token {
+        token_kind: StarEqual,
+        token: "*=",
+        line: 1,
+    },
+    Token {
+        token_kind: SlashEqual,
+        token: "/=",
+        line: 1,
+    },
+    Token {
+        token_kind: Dot,
+        token: ".",
+        line: 1,
+    },
+    Token {
+        token_kind: Colon,
+        token: ":",
+        line: 1,
+    },
+    Token {
+        token_kind: Question,
+        token: "?",
+        line: 1,
+    },
+    Token {
+        token_kind: PlusPlus,
+        token: "++",
+        line: 1,
+    },
+    Token {
+        token_kind: MinusMinus,
+        token: "--",
+        line: 1,
+    },
+    Token {
+        token_kind: Eof,
+        token: "",
+        line: 2,
+    },
+]

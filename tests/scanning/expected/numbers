@@ -1,0 +1,32 @@
+[
+    Token {
+        token_kind: Number,
+        token: "123",
+        line: 1,
+    },
+    Token {
+        token_kind: Number,
+        token: "123.456",
+        line: 2,
+    },
+    Token {
+        token_kind: Dot,
+        token: ".",
+        line: 3,
+    },
+    Token {
+        token_kind: Number,
+        token: "456",
+        line: 3,
+    },
+    Token {
+        token_kind: Number,
+        token: "123.",
+        line: 4,
+    },
+    Token {
+        token_kind: Eof,
+        token: "",
+        line: 5,
+    },
+]

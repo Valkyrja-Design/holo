@@ -1,0 +1,97 @@
+[
+    Token {
+        token_kind: And,
+        token: "and",
+        line: 1,
+    },
+    Token {
+        token_kind: Class,
+        token: "class",
+        line: 1,
+    },
+    Token {
+        token_kind: Else,
+        token: "else",
+        line: 1,
+    },
+    Token {
+        token_kind: False,
+        token: "false",
+        line: 1,
+    },
+    Token {
+        token_kind: For,
+        token: "for",
+        line: 1,
+    },
+    Token {
+        token_kind: Fun,
+        token: "fun",
+        line: 1,
+    },
+    Token {
+        token_kind: If,
+        token: "if",
+        line: 3,
+    },
+    Token {
+        token_kind: Nil,
+        token: "nil",
+        line: 3,
+    },
+    Token {
+        token_kind: Or,
+        token: "or",
+        line: 3,
+    },
+    Token {
+        token_kind: Print,
+        token: "print",
+        line: 3,
+    },
+    Token {
+        token_kind: Return,
+        token: "return",
+        line: 3,
+    },
+    Token {
+        token_kind: Super,
+        token: "super",
+        line: 3,
+    },
+    Token {
+        token_kind: This,
+        token: "this",
+        line: 3,
+    },
+    Token {
+        token_kind: True,
+        token: "true",
+        line: 3,
+    },
+    Token {
+        token_kind: Var,
+        token: "var",
+        line: 3,
+    },
+    Token {
+        token_kind: While,
+        token: "while",
+        line: 3,
+    },
+    Token {
+        token_kind: Break,
+        token: "break",
+        line: 3,
+    },
+    Token {
+        token_kind: Continue,
+        token: "continue",
+        line: 3,
+    },
+    Token {
+        token_kind: Eof,
+        token: "",
+        line: 4,
+    },
+]
