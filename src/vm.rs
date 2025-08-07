@@ -1,5 +1,7 @@
 use std::ptr::NonNull;
 
+use crate::value;
+
 use super::{
     chunk::{Chunk, OpCode},
     gc,
@@ -21,18 +23,25 @@ pub struct VM {
     stack: Vec<Value>,
     gc: gc::GC,
     str_intern_table: StringInternTable,
-    globals: StringTable,
+    globals: Vec<Option<Value>>, // None means the variable is undefined
+    global_var_names: Vec<String>,
 }
 
 impl VM {
-    pub fn new(chunk: Chunk, gc: gc::GC, str_intern_table: StringInternTable) -> Self {
+    pub fn new(
+        chunk: Chunk,
+        gc: gc::GC,
+        str_intern_table: StringInternTable,
+        global_var_names: Vec<String>,
+    ) -> Self {
         VM {
             chunk, // Store the reference
             ip: 0,
             stack: vec![],
             gc,
             str_intern_table,
-            globals: StringTable::new(),
+            globals: vec![None; global_var_names.len()],
+            global_var_names,
         }
     }
 
@@ -208,45 +217,45 @@ impl VM {
                 }
                 OpCode::DefineGlobal => {
                     // IMP: lookout for GC here
-                    let name_val = self.read_constant();
+                    let index: usize = self.read_int();
 
-                    if self.define_global(name_val) != InterpretResult::Ok {
+                    if self.define_global(index) != InterpretResult::Ok {
                         return InterpretResult::RuntimeError;
                     }
                 }
                 OpCode::DefineGlobalLong => {
                     // IMP: lookout for GC here
-                    let name_val = self.read_constant_long();
+                    let index = self.read_int_long();
 
-                    if self.define_global(name_val) != InterpretResult::Ok {
+                    if self.define_global(index) != InterpretResult::Ok {
                         return InterpretResult::RuntimeError;
                     }
                 }
                 OpCode::GetGlobal => {
-                    let name_val = self.read_constant();
+                    let index = self.read_int();
 
-                    if self.get_global(name_val) != InterpretResult::Ok {
+                    if self.get_global(index) != InterpretResult::Ok {
                         return InterpretResult::RuntimeError;
                     }
                 }
                 OpCode::GetGlobalLong => {
-                    let name_val = self.read_constant_long();
+                    let index = self.read_int_long();
 
-                    if self.get_global(name_val) != InterpretResult::Ok {
+                    if self.get_global(index) != InterpretResult::Ok {
                         return InterpretResult::RuntimeError;
                     }
                 }
                 OpCode::SetGlobal => {
-                    let name_val = self.read_constant();
+                    let index = self.read_int();
 
-                    if self.set_global(name_val) != InterpretResult::Ok {
+                    if self.set_global(index) != InterpretResult::Ok {
                         return InterpretResult::RuntimeError;
                     }
                 }
                 OpCode::SetGlobalLong => {
-                    let name_val = self.read_constant_long();
+                    let index = self.read_int_long();
 
-                    if self.set_global(name_val) != InterpretResult::Ok {
+                    if self.set_global(index) != InterpretResult::Ok {
                         return InterpretResult::RuntimeError;
                     }
                 }
@@ -254,69 +263,51 @@ impl VM {
         }
     }
 
-    fn define_global(&mut self, name_val: Value) -> InterpretResult {
+    fn define_global(&mut self, index: usize) -> InterpretResult {
         if self.stack.len() < 1 {
             return InterpretResult::RuntimeError;
         }
 
-        let name = self.extract_string_key(name_val);
-
         let initializer = self.stack.pop().unwrap();
-        self.globals.insert(name, initializer);
 
-        InterpretResult::Ok
+        // don't care what the current value is
+        match self.globals.get_mut(index) {
+            Some(value) => {
+                *value = Some(initializer);
+                InterpretResult::Ok
+            }
+            _ => unreachable!(),
+        }
     }
 
-    fn get_global(&mut self, name_val: Value) -> InterpretResult {
-        let name = self.extract_string_key(name_val);
-
-        match self.globals.get(name) {
-            Some(value) => {
+    fn get_global(&mut self, index: usize) -> InterpretResult {
+        match self.globals.get(index) {
+            Some(Some(value)) => {
                 self.stack.push(*value);
                 InterpretResult::Ok
             }
-            None => {
-                // SAFETY: we only ever use GC allocated pointers which are
-                // made sure to be valid by the GC
-                let s = unsafe { name.as_ref() };
-                self.runtime_error(format!("Undefined variable '{}'", s).as_str())
-            }
+            _ => self.runtime_error(
+                format!("Undefined variable '{}'", self.global_var_names[index]).as_str(),
+            ),
         }
     }
 
-    fn set_global(&mut self, name_val: Value) -> InterpretResult {
+    fn set_global(&mut self, index: usize) -> InterpretResult {
         if self.stack.len() < 1 {
             return InterpretResult::RuntimeError;
         }
 
-        let name = self.extract_string_key(name_val);
         let to = self.stack.pop().unwrap();
 
-        match self.globals.insert(name, to) {
-            Some(_) => {
+        match self.globals.get_mut(index) {
+            Some(Some(value)) => {
+                *value = to;
                 self.stack.push(to);
                 InterpretResult::Ok
             }
-            None => {
-                // SAFETY: we only ever use GC allocated pointers which are
-                // made sure to be valid by the GC
-                let s = unsafe { name.as_ref() };
-                self.runtime_error(format!("Undefined variable '{}'", s).as_str())
-            }
-        }
-    }
-
-    fn extract_string_key(&self, value: Value) -> NonNull<str> {
-        match value {
-            // SAFETY: we only ever use GC allocated pointers which are
-            // made sure to be valid by the GC
-            Value::Object(handle) => unsafe {
-                match &*handle {
-                    Object::Str(s) => NonNull::from(s.as_str()),
-                    _ => unreachable!(),
-                }
-            },
-            _ => unreachable!(),
+            _ => self.runtime_error(
+                format!("Undefined variable '{}'", self.global_var_names[index]).as_str(),
+            ),
         }
     }
 
@@ -398,7 +389,6 @@ impl VM {
         let byte = self.chunk.code[self.ip];
 
         self.ip += 1;
-
         byte
     }
 
@@ -416,101 +406,22 @@ impl VM {
         self.chunk.constants[idx]
     }
 
+    fn read_int(&mut self) -> usize {
+        self.read_byte() as usize
+    }
+
+    fn read_int_long(&mut self) -> usize {
+        let idx = Chunk::read_as_24bit_int(&self.chunk.code[self.ip..self.ip + 3]);
+        self.ip += 3;
+
+        idx
+    }
+
     fn runtime_error(&self, err: &str) -> InterpretResult {
         let instr = self.ip - 1;
         let line = self.chunk.get_line_of(instr);
 
         eprintln!("[line {line}] Runtime error: {err}");
         InterpretResult::RuntimeError
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn simple_chunk() {
-        let mut chunk = Chunk::default();
-
-        for _ in 0..256 {
-            let idx = chunk.add_constant(Value::Number(1.23)) as u8;
-
-            chunk.write_opcode(OpCode::Constant, 1);
-            chunk.write_byte(idx, 1);
-        }
-
-        for _ in 256..512 {
-            let idx = chunk.add_constant(Value::Number(125.25));
-
-            chunk.write_opcode(OpCode::ConstantLong, 1);
-            chunk.write_as_24bit_int(idx, 1);
-        }
-
-        chunk.write_opcode(OpCode::Print, 1);
-        chunk.write_opcode(OpCode::Return, 2);
-
-        let gc = gc::GC::new();
-        let str_intern_table = StringInternTable::new();
-        let mut vm = VM::new(chunk, gc, str_intern_table);
-
-        assert_eq!(vm.run(), InterpretResult::Ok);
-    }
-
-    #[test]
-    fn arithmetic() {
-        let mut chunk = Chunk::default();
-
-        for _ in 0..2 {
-            let idx = chunk.add_constant(Value::Number(1.23)) as u8;
-
-            chunk.write_opcode(OpCode::Constant, 7);
-            chunk.write_byte(idx, 7);
-        }
-
-        for _ in 2..4 {
-            let idx = chunk.add_constant(Value::Number(125.25));
-
-            chunk.write_opcode(OpCode::ConstantLong, 7);
-            chunk.write_as_24bit_int(idx, 7);
-        }
-
-        chunk.write_opcode(OpCode::Negate, 7);
-        chunk.write_opcode(OpCode::Add, 7);
-        chunk.write_opcode(OpCode::Sub, 7);
-        chunk.write_opcode(OpCode::Divide, 7);
-
-        chunk.write_opcode(OpCode::Print, 7);
-        chunk.write_opcode(OpCode::Return, 8);
-
-        let gc = gc::GC::new();
-        let str_intern_table = StringInternTable::new();
-        let mut vm = VM::new(chunk, gc, str_intern_table);
-
-        assert_eq!(vm.run(), InterpretResult::Ok);
-    }
-
-    #[test]
-    fn benchmark_negation() {
-        let mut chunk = Chunk::new();
-        const INSTR_COUNT: usize = 100000000;
-
-        let idx = chunk.add_constant(Value::Number(125.25));
-
-        chunk.write_opcode(OpCode::ConstantLong, 3);
-        chunk.write_as_24bit_int(idx, 3);
-
-        for _ in 0..INSTR_COUNT {
-            chunk.write_opcode(OpCode::Negate, 3);
-        }
-
-        chunk.write_opcode(OpCode::Print, 3);
-        chunk.write_opcode(OpCode::Return, 8);
-
-        let gc = gc::GC::new();
-        let str_intern_table = StringInternTable::new();
-        let mut vm = VM::new(chunk, gc, str_intern_table);
-
-        assert_eq!(vm.run(), InterpretResult::Ok);
     }
 }

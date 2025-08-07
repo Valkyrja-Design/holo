@@ -12,9 +12,9 @@ print -
 
 // should show error at line 1 instead of line 2
 ```
-
+- [ ] fix error token in `emit_opcode_with*` functions
+- [x] build a symbol table for globals
 - [ ] multi-line strings
-- [ ] build a symbol table for globals
 - [ ] multi-pass compilation
 - [ ] string interpolation
 - [ ] Better error messages

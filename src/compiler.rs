@@ -1,8 +1,11 @@
+use std::collections::HashMap;
+
 use super::{
     chunk::{Chunk, OpCode},
-    gc,
+    gc::GC,
     object::Object,
-    scanner,
+    scanner::Scanner,
+    sym_table::SymbolTable,
     table::StringInternTable,
     token::{Token, TokenKind},
     value::Value,
@@ -69,12 +72,13 @@ impl std::ops::Add<usize> for Precedence {
 
 pub struct Compiler<'a, 'b, 'c> {
     source: &'a str,
-    scanner: scanner::Scanner<'a>,
+    scanner: Scanner<'a>,
     curr_token: Token<'a>,
     prev_token: Token<'a>,
     chunk: Chunk,
-    gc: &'b mut gc::GC,
+    gc: &'b mut GC,
     str_intern_table: &'c mut StringInternTable,
+    sym_table: SymbolTable<'a>,
     had_error: bool,
 }
 
@@ -340,13 +344,13 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 
     pub fn new(
         source: &'a str,
-        gc: &'b mut gc::GC,
+        gc: &'b mut GC,
         str_intern_table: &'c mut StringInternTable,
     ) -> Self {
         // initialize with dummy tokens
         Compiler {
             source,
-            scanner: scanner::Scanner::new(source),
+            scanner: Scanner::new(source),
             curr_token: Token {
                 kind: TokenKind::Eof,
                 lexeme: "",
@@ -360,11 +364,12 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             chunk: Chunk::new(),
             gc,
             str_intern_table,
+            sym_table: SymbolTable::new(),
             had_error: false,
         }
     }
 
-    pub fn compile(mut self) -> Option<Chunk> {
+    pub fn compile(mut self) -> Option<(Chunk, SymbolTable<'a>)> {
         if let Err(err) = self.advance() {
             self.report_err(err);
 
@@ -384,7 +389,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         self.finish();
 
         if !self.had_error {
-            Some(self.chunk)
+            Some((self.chunk, self.sym_table))
         } else {
             None
         }
@@ -403,8 +408,8 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
     fn var_declaration(&mut self) -> Result<(), CompileError<'a>> {
         self.consume(TokenKind::Identifier, "Expected variable name")?;
 
-        let obj = Object::Str(self.prev_token.lexeme.to_owned());
-        let obj_ref = self.gc.alloc(obj);
+        let name = self.prev_token.lexeme;
+        let index = self.sym_table.add(name);
 
         // consume the initializer, if any
         if self.check(TokenKind::Equal) {
@@ -416,10 +421,11 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 
         self.consume(TokenKind::Semicolon, "Expected ';' at the end of statement")?;
 
-        self.emit_opcode_with_constant(
+        self.emit_opcode_with_index(
             OpCode::DefineGlobal,
             OpCode::DefineGlobalLong,
-            Value::Object(obj_ref),
+            index,
+            "Too many global variables in the program".to_string(),
         )
     }
 
@@ -454,24 +460,26 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
     }
 
     fn variable(&mut self, can_assign: bool) -> Result<(), CompileError<'a>> {
-        let obj = Object::Str(self.prev_token.lexeme.to_owned());
-        let obj_ref = self.gc.alloc(obj);
+        let name = self.prev_token.lexeme;
+        let index = self.sym_table.add(name);
 
         match self.curr_token.kind {
             TokenKind::Equal if can_assign => {
                 // this is an assignment expr
                 self.advance()?;
                 self.expression()?;
-                self.emit_opcode_with_constant(
+                self.emit_opcode_with_index(
                     OpCode::SetGlobal,
                     OpCode::SetGlobalLong,
-                    Value::Object(obj_ref),
+                    index,
+                    "Too many global variables in the program".to_string(),
                 )
             }
-            _ => self.emit_opcode_with_constant(
+            _ => self.emit_opcode_with_index(
                 OpCode::GetGlobal,
                 OpCode::GetGlobalLong,
-                Value::Object(obj_ref),
+                index,
+                "Too many global variables in the program".to_string(),
             ),
         }
     }
@@ -720,30 +728,41 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             .write_opcode(OpCode::Return, self.prev_token.line);
     }
 
+    fn emit_opcode_with_index(
+        &mut self,
+        opcode: OpCode,
+        opcode_long: OpCode,
+        num: usize,
+        err: String,
+    ) -> Result<(), CompileError<'a>> {
+        const MAX24BIT: usize = (1 << 24) - 1;
+
+        if num <= u8::MAX as usize {
+            self.emit_opcode(opcode);
+            self.emit_byte(num as u8);
+            Ok(())
+        } else if num <= MAX24BIT {
+            self.emit_opcode(opcode_long);
+            self.chunk.write_as_24bit_int(num, self.prev_token.line);
+            Ok(())
+        } else {
+            Err(CompileError::new(self.prev_token.clone(), err))
+        }
+    }
+
     fn emit_opcode_with_constant(
         &mut self,
         opcode: OpCode,
         opcode_long: OpCode,
         value: Value,
     ) -> Result<(), CompileError<'a>> {
-        const MAX24BIT: usize = (1 << 24) - 1;
-
-        let idx = self.chunk.add_constant(value);
-
-        if idx <= u8::MAX as usize {
-            self.emit_opcode(opcode);
-            self.emit_byte(idx as u8);
-            Ok(())
-        } else if idx <= MAX24BIT {
-            self.emit_opcode(opcode_long);
-            self.chunk.write_as_24bit_int(idx, self.prev_token.line);
-            Ok(())
-        } else {
-            Err(CompileError::new(
-                self.prev_token.clone(),
-                "Too many constants in the chunk".to_string(),
-            ))
-        }
+        let index = self.chunk.add_constant(value);
+        self.emit_opcode_with_index(
+            opcode,
+            opcode_long,
+            index,
+            "Too many constants in the chunk".to_string(),
+        )
     }
 
     fn get_rule(&self, kind: TokenKind) -> &ParseRule<'a, 'b, 'c> {

@@ -4,6 +4,7 @@ pub mod disassembler;
 pub mod gc;
 pub mod object;
 pub mod scanner;
+pub mod sym_table;
 pub mod table;
 pub mod token;
 pub mod value;
@@ -18,8 +19,8 @@ pub fn interpret(path: &str) -> vm::InterpretResult {
             let mut str_intern_table = table::StringInternTable::new();
             let compiler = compiler::Compiler::new(&source, &mut gc, &mut str_intern_table);
 
-            if let Some(chunk) = compiler.compile() {
-                let mut vm = vm::VM::new(chunk, gc, str_intern_table);
+            if let Some((chunk, sym_table)) = compiler.compile() {
+                let mut vm = vm::VM::new(chunk, gc, str_intern_table, sym_table.names_as_owned());
                 vm.run()
             } else {
                 vm::InterpretResult::CompileError
