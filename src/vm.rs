@@ -33,13 +33,22 @@ impl<'a> VM<'a> {
                     let constant = self.read_constant_long();
                     self.stack.push(constant);
                 }
+                chunk::OpCode::Nil => {
+                    self.stack.push(value::Value::Nil);
+                }
+                chunk::OpCode::True => {
+                    self.stack.push(value::Value::Bool(true));
+                }
+                chunk::OpCode::False => {
+                    self.stack.push(value::Value::Bool(false));
+                }
                 chunk::OpCode::Return => {
                     println!("{:#?}", self.stack.pop().unwrap());
 
                     return InterpretResult::Ok;
                 }
                 chunk::OpCode::Negate => {
-                    if let Some(value) = self.stack.last_mut() {
+                    if let Some(value::Value::Number(value)) = self.stack.last_mut() {
                         *value = -*value;
                     } else {
                         return InterpretResult::RuntimeError;
@@ -53,7 +62,15 @@ impl<'a> VM<'a> {
                     let right = self.stack.pop().unwrap();
                     let left = self.stack.last_mut().unwrap();
 
-                    *left += right;
+                    if let value::Value::Number(left) = left {
+                        if let value::Value::Number(right) = right {
+                            *left += right;
+                            continue;
+                        }
+                    }
+
+                    self.runtime_error("Operands to '+' must be numbers");
+                    return InterpretResult::RuntimeError;
                 }
                 chunk::OpCode::Sub => {
                     if self.stack.len() < 2 {
@@ -63,7 +80,15 @@ impl<'a> VM<'a> {
                     let right = self.stack.pop().unwrap();
                     let left = self.stack.last_mut().unwrap();
 
-                    *left -= right;
+                    if let value::Value::Number(left) = left {
+                        if let value::Value::Number(right) = right {
+                            *left -= right;
+                            continue;
+                        }
+                    }
+
+                    self.runtime_error("Operands to '-' must be numbers");
+                    return InterpretResult::RuntimeError;
                 }
                 chunk::OpCode::Mult => {
                     if self.stack.len() < 2 {
@@ -73,7 +98,15 @@ impl<'a> VM<'a> {
                     let right = self.stack.pop().unwrap();
                     let left = self.stack.last_mut().unwrap();
 
-                    *left *= right;
+                    if let value::Value::Number(left) = left {
+                        if let value::Value::Number(right) = right {
+                            *left *= right;
+                            continue;
+                        }
+                    }
+
+                    self.runtime_error("Operands to '*' must be numbers");
+                    return InterpretResult::RuntimeError;
                 }
                 chunk::OpCode::Divide => {
                     if self.stack.len() < 2 {
@@ -83,11 +116,22 @@ impl<'a> VM<'a> {
                     let right = self.stack.pop().unwrap();
                     let left = self.stack.last_mut().unwrap();
 
-                    if right == 0.0 {
-                        return InterpretResult::RuntimeError;
+                    if let value::Value::Number(left) = left {
+                        match right {
+                            value::Value::Number(0.0) => {
+                                self.runtime_error("Division by 0");
+                                continue;
+                            }
+                            value::Value::Number(right) => {
+                                *left /= right;
+                                continue;
+                            }
+                            _ => (),
+                        }
                     }
 
-                    *left /= right;
+                    self.runtime_error("Operands to '/' must be numbers");
+                    return InterpretResult::RuntimeError;
                 }
                 chunk::OpCode::Ternary => {
                     if self.stack.len() < 3 {
@@ -98,10 +142,18 @@ impl<'a> VM<'a> {
                     let then_value = self.stack.pop().unwrap();
                     let predicate = self.stack.last_mut().unwrap();
 
-                    if *predicate != 0. {
-                        *predicate = then_value;
-                    } else {
-                        *predicate = else_value;
+                    match predicate {
+                        value::Value::Bool(value) => {
+                            if *value {
+                                *predicate = then_value;
+                            } else {
+                                *predicate = else_value;
+                            }
+                        }
+                        _ => {
+                            self.runtime_error("Expected a boolean as ternary operator predicate");
+                            return InterpretResult::RuntimeError;
+                        }
                     }
                 }
             }
@@ -133,6 +185,13 @@ impl<'a> VM<'a> {
 
         self.chunk.constants[idx]
     }
+
+    fn runtime_error(&self, err: &str) {
+        let instr = self.ip - 1;
+        let line = self.chunk.get_line_of(instr);
+
+        eprintln!("[line {line}] Runtime error: {err}");
+    }
 }
 
 #[cfg(test)]
@@ -144,14 +203,14 @@ mod tests {
         let mut chunk = chunk::Chunk::default();
 
         for _ in 0..256 {
-            let idx = chunk.add_constant(1.23) as u8;
+            let idx = chunk.add_constant(value::Value::Number(1.23)) as u8;
 
             chunk.write_opcode(chunk::OpCode::Constant, 1);
             chunk.write_byte(idx, 1);
         }
 
         for _ in 256..512 {
-            let idx = chunk.add_constant(125.25);
+            let idx = chunk.add_constant(value::Value::Number(125.25));
 
             chunk.write_opcode(chunk::OpCode::ConstantLong, 2);
             chunk.write_as_24bit_int(idx, 2);
@@ -169,14 +228,14 @@ mod tests {
         let mut chunk = chunk::Chunk::default();
 
         for _ in 0..2 {
-            let idx = chunk.add_constant(1.23) as u8;
+            let idx = chunk.add_constant(value::Value::Number(1.23)) as u8;
 
             chunk.write_opcode(chunk::OpCode::Constant, 1);
             chunk.write_byte(idx, 1);
         }
 
         for _ in 2..4 {
-            let idx = chunk.add_constant(125.25);
+            let idx = chunk.add_constant(value::Value::Number(125.25));
 
             chunk.write_opcode(chunk::OpCode::ConstantLong, 2);
             chunk.write_as_24bit_int(idx, 2);
@@ -199,7 +258,7 @@ mod tests {
         let mut chunk = chunk::Chunk::new();
         const INSTR_COUNT: usize = 1000000000;
 
-        let idx = chunk.add_constant(125.25);
+        let idx = chunk.add_constant(value::Value::Number(125.25));
 
         chunk.write_opcode(chunk::OpCode::ConstantLong, 2);
         chunk.write_as_24bit_int(idx, 2);

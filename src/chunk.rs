@@ -4,6 +4,9 @@ use super::value;
 pub enum OpCode {
     Constant,
     ConstantLong, // stores index as 24 bit integer
+    Nil,
+    True,
+    False,
     Return,
     Negate,
     Add,
@@ -18,13 +21,16 @@ impl From<u8> for OpCode {
         match value {
             0 => OpCode::Constant,
             1 => OpCode::ConstantLong,
-            2 => OpCode::Return,
-            3 => OpCode::Negate,
-            4 => OpCode::Add,
-            5 => OpCode::Sub,
-            6 => OpCode::Mult,
-            7 => OpCode::Divide,
-            8 => OpCode::Ternary,
+            2 => OpCode::Nil,
+            3 => OpCode::True,
+            4 => OpCode::False,
+            5 => OpCode::Return,
+            6 => OpCode::Negate,
+            7 => OpCode::Add,
+            8 => OpCode::Sub,
+            9 => OpCode::Mult,
+            10 => OpCode::Divide,
+            11 => OpCode::Ternary,
             _ => panic!("invalid opcode!"),
         }
     }
@@ -35,13 +41,16 @@ impl From<OpCode> for u8 {
         match value {
             OpCode::Constant => 0,
             OpCode::ConstantLong => 1,
-            OpCode::Return => 2,
-            OpCode::Negate => 3,
-            OpCode::Add => 4,
-            OpCode::Sub => 5,
-            OpCode::Mult => 6,
-            OpCode::Divide => 7,
-            OpCode::Ternary => 8,
+            OpCode::Nil => 2,
+            OpCode::True => 3,
+            OpCode::False => 4,
+            OpCode::Return => 5,
+            OpCode::Negate => 6,
+            OpCode::Add => 7,
+            OpCode::Sub => 8,
+            OpCode::Mult => 9,
+            OpCode::Divide => 10,
+            OpCode::Ternary => 11,
         }
     }
 }

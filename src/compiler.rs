@@ -79,7 +79,7 @@ impl<'a> Compiler<'a> {
         ParseRule {
             prefix_rule: Some(Self::grouping),
             infix_rule: None,
-            precedence: Precedence::Primary,
+            precedence: Precedence::None,
         }, // LeftParen
         ParseRule {
             prefix_rule: None,
@@ -144,7 +144,7 @@ impl<'a> Compiler<'a> {
         ParseRule {
             prefix_rule: Some(Self::unary),
             infix_rule: None,
-            precedence: Precedence::Unary,
+            precedence: Precedence::None,
         }, // Bang
         ParseRule {
             prefix_rule: None,
@@ -224,7 +224,7 @@ impl<'a> Compiler<'a> {
         ParseRule {
             prefix_rule: Some(Self::number),
             infix_rule: None,
-            precedence: Precedence::Primary,
+            precedence: Precedence::None,
         }, // Number
         ParseRule {
             prefix_rule: None,
@@ -242,7 +242,7 @@ impl<'a> Compiler<'a> {
             precedence: Precedence::None,
         }, // Else
         ParseRule {
-            prefix_rule: None,
+            prefix_rule: Some(Self::literal),
             infix_rule: None,
             precedence: Precedence::None,
         }, // False
@@ -262,7 +262,7 @@ impl<'a> Compiler<'a> {
             precedence: Precedence::None,
         }, // If
         ParseRule {
-            prefix_rule: None,
+            prefix_rule: Some(Self::literal),
             infix_rule: None,
             precedence: Precedence::None,
         }, // Nil
@@ -292,7 +292,7 @@ impl<'a> Compiler<'a> {
             precedence: Precedence::None,
         }, // This
         ParseRule {
-            prefix_rule: None,
+            prefix_rule: Some(Self::literal),
             infix_rule: None,
             precedence: Precedence::None,
         }, // True
@@ -376,8 +376,29 @@ impl<'a> Compiler<'a> {
 
     fn number(&mut self) -> Result<(), CompileError<'a>> {
         match self.prev_token.lexeme.parse::<f64>() {
-            Ok(value) => self.emit_constant(value),
+            Ok(value) => self.emit_constant(value::Value::Number(value)),
             Err(err) => Err(CompileError::new(self.prev_token.clone(), err.to_string())),
+        }
+    }
+
+    fn literal(&mut self) -> Result<(), CompileError<'a>> {
+        match self.prev_token.kind {
+            token::TokenKind::Nil => {
+                self.emit_opcode(chunk::OpCode::Nil);
+                Ok(())
+            }
+            token::TokenKind::True => {
+                self.emit_opcode(chunk::OpCode::True);
+                Ok(())
+            }
+            token::TokenKind::False => {
+                self.emit_opcode(chunk::OpCode::False);
+                Ok(())
+            }
+            _ => Err(CompileError::new(
+                self.prev_token.clone(),
+                "Expected a literal".to_string(),
+            )),
         }
     }
 

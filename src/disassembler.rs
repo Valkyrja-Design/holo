@@ -18,20 +18,23 @@ pub fn disassemble_instr(chunk: &chunk::Chunk, offset: usize) -> usize {
     match chunk::OpCode::from(instr) {
         chunk::OpCode::Constant => const_instr(chunk, offset),
         chunk::OpCode::ConstantLong => const_long_instr(chunk, offset),
+        chunk::OpCode::Nil => simple_instr("NIL", offset),
+        chunk::OpCode::True => simple_instr("TRUE", offset),
+        chunk::OpCode::False => simple_instr("FALSE", offset),
         chunk::OpCode::Return => simple_instr("RETURN", offset),
         chunk::OpCode::Negate => simple_instr("NEGATE", offset),
         chunk::OpCode::Add => simple_instr("ADD", offset),
         chunk::OpCode::Sub => simple_instr("SUB", offset),
         chunk::OpCode::Mult => simple_instr("MULT", offset),
         chunk::OpCode::Divide => simple_instr("DIVIDE", offset),
-        chunk::OpCode::Ternary => offset,
+        chunk::OpCode::Ternary => simple_instr("TERNARY", offset),
     }
 }
 
 fn const_instr(chunk: &chunk::Chunk, offset: usize) -> usize {
     let idx = chunk.code[offset + 1];
 
-    println!("CONSTANT {}", chunk.constants[idx as usize]);
+    println!("CONSTANT {:#?}", chunk.constants[idx as usize]);
 
     offset + 2
 }
@@ -39,7 +42,7 @@ fn const_instr(chunk: &chunk::Chunk, offset: usize) -> usize {
 fn const_long_instr(chunk: &chunk::Chunk, offset: usize) -> usize {
     let idx = chunk::Chunk::read_as_24bit_int(&chunk.code[offset + 1..offset + 4]);
 
-    println!("CONSTANT_LONG {}", chunk.constants[idx]);
+    println!("CONSTANT_LONG {:#?}", chunk.constants[idx]);
 
     offset + 4
 }
@@ -52,6 +55,8 @@ fn simple_instr(name: &str, offset: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use crate::value;
+
     use super::*;
 
     #[test]
@@ -59,14 +64,14 @@ mod tests {
         let mut chunk = chunk::Chunk::default();
 
         for _ in 0..2 {
-            let idx = chunk.add_constant(1.23) as u8;
+            let idx = chunk.add_constant(value::Value::Number(1.23)) as u8;
 
             chunk.write_opcode(chunk::OpCode::Constant, 1);
             chunk.write_byte(idx, 1);
         }
 
         for _ in 2..4 {
-            let idx = chunk.add_constant(125.25);
+            let idx = chunk.add_constant(value::Value::Number(125.25));
 
             chunk.write_opcode(chunk::OpCode::ConstantLong, 2);
             chunk.write_as_24bit_int(idx, 2);
