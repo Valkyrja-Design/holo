@@ -1,21 +1,29 @@
-use super::{chunk, scanner, token, value};
+use super::{
+    chunk::{Chunk, OpCode},
+    gc,
+    object::Object,
+    scanner,
+    token::{Token, TokenKind},
+    value::Value,
+};
 
-pub struct Compiler<'a> {
+pub struct Compiler<'a, 'b> {
     source: &'a str,
     scanner: scanner::Scanner<'a>,
-    curr_token: token::Token<'a>,
-    prev_token: token::Token<'a>,
-    chunk: chunk::Chunk,
+    curr_token: Token<'a>,
+    prev_token: Token<'a>,
+    chunk: Chunk,
+    gc: &'b mut gc::GC,
     had_error: bool,
 }
 
 struct CompileError<'a> {
-    token: token::Token<'a>,
+    token: Token<'a>,
     err: String,
 }
 
 impl<'a> CompileError<'a> {
-    pub fn new(token: token::Token<'a>, err: String) -> Self {
+    pub fn new(token: Token<'a>, err: String) -> Self {
         CompileError { token, err }
     }
 }
@@ -68,14 +76,14 @@ impl std::ops::Add<usize> for Precedence {
     }
 }
 
-struct ParseRule<'a> {
-    prefix_rule: Option<fn(&mut Compiler<'a>) -> Result<(), CompileError<'a>>>,
-    infix_rule: Option<fn(&mut Compiler<'a>) -> Result<(), CompileError<'a>>>,
+struct ParseRule<'a, 'b> {
+    prefix_rule: Option<fn(&mut Compiler<'a, 'b>) -> Result<(), CompileError<'a>>>,
+    infix_rule: Option<fn(&mut Compiler<'a, 'b>) -> Result<(), CompileError<'a>>>,
     precedence: Precedence,
 }
 
-impl<'a> Compiler<'a> {
-    const RULES: [ParseRule<'a>; 50] = [
+impl<'a, 'b> Compiler<'a, 'b> {
+    const RULES: [ParseRule<'a, 'b>; 50] = [
         ParseRule {
             prefix_rule: Some(Self::grouping),
             infix_rule: None,
@@ -217,7 +225,7 @@ impl<'a> Compiler<'a> {
             precedence: Precedence::None,
         }, // Identifier
         ParseRule {
-            prefix_rule: None,
+            prefix_rule: Some(Self::string),
             infix_rule: None,
             precedence: Precedence::None,
         }, // String
@@ -328,27 +336,28 @@ impl<'a> Compiler<'a> {
         }, // Eof
     ];
 
-    pub fn new(source: &'a str) -> Self {
+    pub fn new(source: &'a str, gc: &'b mut gc::GC) -> Self {
         // initialize with dummy tokens
         Compiler {
             source,
             scanner: scanner::Scanner::new(source),
-            curr_token: token::Token {
-                kind: token::TokenKind::Eof,
+            curr_token: Token {
+                kind: TokenKind::Eof,
                 lexeme: "",
                 line: 0,
             },
-            prev_token: token::Token {
-                kind: token::TokenKind::Eof,
+            prev_token: Token {
+                kind: TokenKind::Eof,
                 lexeme: "",
                 line: 0,
             },
-            chunk: chunk::Chunk::new(),
+            chunk: Chunk::new(),
+            gc,
             had_error: false,
         }
     }
 
-    pub fn compile(&mut self) -> Option<&chunk::Chunk> {
+    pub fn compile(mut self) -> Option<Chunk> {
         if let Err(err) = self.advance() {
             self.report_err(err);
         }
@@ -357,14 +366,14 @@ impl<'a> Compiler<'a> {
             self.report_err(err);
         }
 
-        if let Err(err) = self.consume(token::TokenKind::Eof, "Expected end of expression") {
+        if let Err(err) = self.consume(TokenKind::Eof, "Expected end of expression") {
             self.report_err(err);
         }
 
         self.finish();
 
         if !self.had_error {
-            Some(&self.chunk)
+            Some(self.chunk)
         } else {
             None
         }
@@ -376,23 +385,23 @@ impl<'a> Compiler<'a> {
 
     fn number(&mut self) -> Result<(), CompileError<'a>> {
         match self.prev_token.lexeme.parse::<f64>() {
-            Ok(value) => self.emit_constant(value::Value::Number(value)),
+            Ok(value) => self.emit_constant(Value::Number(value)),
             Err(err) => Err(CompileError::new(self.prev_token.clone(), err.to_string())),
         }
     }
 
     fn literal(&mut self) -> Result<(), CompileError<'a>> {
         match self.prev_token.kind {
-            token::TokenKind::Nil => {
-                self.emit_opcode(chunk::OpCode::Nil);
+            TokenKind::Nil => {
+                self.emit_opcode(OpCode::Nil);
                 Ok(())
             }
-            token::TokenKind::True => {
-                self.emit_opcode(chunk::OpCode::True);
+            TokenKind::True => {
+                self.emit_opcode(OpCode::True);
                 Ok(())
             }
-            token::TokenKind::False => {
-                self.emit_opcode(chunk::OpCode::False);
+            TokenKind::False => {
+                self.emit_opcode(OpCode::False);
                 Ok(())
             }
             _ => Err(CompileError::new(
@@ -402,9 +411,25 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    fn string(&mut self) -> Result<(), CompileError<'a>> {
+        match self.prev_token.kind {
+            TokenKind::String => {
+                let str_ptr = self.gc.alloc(Object::Str(
+                    (&self.prev_token.lexeme[1..self.prev_token.lexeme.len() - 1]).to_owned(),
+                ));
+
+                self.emit_constant(Value::Object(str_ptr))
+            }
+            _ => Err(CompileError::new(
+                self.prev_token.clone(),
+                "Expected a string".to_string(),
+            )),
+        }
+    }
+
     fn grouping(&mut self) -> Result<(), CompileError<'a>> {
         self.expression()?;
-        self.consume(token::TokenKind::RightParen, "Expected ')'")
+        self.consume(TokenKind::RightParen, "Expected ')'")
     }
 
     fn unary(&mut self) -> Result<(), CompileError<'a>> {
@@ -415,8 +440,8 @@ impl<'a> Compiler<'a> {
 
         // emit the operator instruction
         match operator_kind {
-            token::TokenKind::Minus => self.emit_opcode(chunk::OpCode::Negate),
-            token::TokenKind::Bang => self.emit_opcode(chunk::OpCode::Not),
+            TokenKind::Minus => self.emit_opcode(OpCode::Negate),
+            TokenKind::Bang => self.emit_opcode(OpCode::Not),
             _ => {
                 return Err(CompileError::new(
                     self.prev_token.clone(),
@@ -437,16 +462,16 @@ impl<'a> Compiler<'a> {
 
         // emit the operator instruction
         match operator_kind {
-            token::TokenKind::Plus => self.emit_opcode(chunk::OpCode::Add),
-            token::TokenKind::Minus => self.emit_opcode(chunk::OpCode::Sub),
-            token::TokenKind::Star => self.emit_opcode(chunk::OpCode::Mult),
-            token::TokenKind::Slash => self.emit_opcode(chunk::OpCode::Divide),
-            token::TokenKind::EqualEqual => self.emit_opcode(chunk::OpCode::Equal),
-            token::TokenKind::BangEqual => self.emit_opcode(chunk::OpCode::NotEqual),
-            token::TokenKind::Greater => self.emit_opcode(chunk::OpCode::Greater),
-            token::TokenKind::GreaterEqual => self.emit_opcode(chunk::OpCode::GreaterEqual),
-            token::TokenKind::Less => self.emit_opcode(chunk::OpCode::Less),
-            token::TokenKind::LessEqual => self.emit_opcode(chunk::OpCode::LessEqual),
+            TokenKind::Plus => self.emit_opcode(OpCode::Add),
+            TokenKind::Minus => self.emit_opcode(OpCode::Sub),
+            TokenKind::Star => self.emit_opcode(OpCode::Mult),
+            TokenKind::Slash => self.emit_opcode(OpCode::Divide),
+            TokenKind::EqualEqual => self.emit_opcode(OpCode::Equal),
+            TokenKind::BangEqual => self.emit_opcode(OpCode::NotEqual),
+            TokenKind::Greater => self.emit_opcode(OpCode::Greater),
+            TokenKind::GreaterEqual => self.emit_opcode(OpCode::GreaterEqual),
+            TokenKind::Less => self.emit_opcode(OpCode::Less),
+            TokenKind::LessEqual => self.emit_opcode(OpCode::LessEqual),
             _ => {
                 return Err(CompileError::new(
                     operator_token,
@@ -461,17 +486,17 @@ impl<'a> Compiler<'a> {
     fn ternary(&mut self) -> Result<(), CompileError<'a>> {
         let operator_kind = self.prev_token.kind;
 
-        if let token::TokenKind::Question = operator_kind {
+        if let TokenKind::Question = operator_kind {
             // compile the 2nd operand
             self.parse_precedence(Precedence::Assignment)?;
 
             // consume the colon
-            self.consume(token::TokenKind::Colon, "Expected ':'")?;
+            self.consume(TokenKind::Colon, "Expected ':'")?;
 
             // compile the 3rd operand
             self.parse_precedence(Precedence::Assignment)?;
 
-            self.emit_opcode(chunk::OpCode::Ternary);
+            self.emit_opcode(OpCode::Ternary);
             Ok(())
         } else {
             Err(CompileError::new(
@@ -519,8 +544,8 @@ impl<'a> Compiler<'a> {
         self.prev_token = self.curr_token.clone();
 
         match self.scanner.scan_token() {
-            token::Token {
-                kind: token::TokenKind::Error,
+            Token {
+                kind: TokenKind::Error,
                 lexeme: err,
                 line: _,
             } => Err(CompileError::new(self.prev_token.clone(), err.to_string())),
@@ -531,11 +556,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn consume(
-        &mut self,
-        expected: token::TokenKind,
-        err: &'a str,
-    ) -> Result<(), CompileError<'a>> {
+    fn consume(&mut self, expected: TokenKind, err: &'a str) -> Result<(), CompileError<'a>> {
         if self.curr_token.kind == expected {
             self.advance()
         } else {
@@ -551,26 +572,26 @@ impl<'a> Compiler<'a> {
         self.chunk.write_byte(byte, self.prev_token.line);
     }
 
-    fn emit_opcode(&mut self, opcode: chunk::OpCode) {
+    fn emit_opcode(&mut self, opcode: OpCode) {
         self.chunk.write_opcode(opcode, self.prev_token.line);
     }
 
     fn emit_return(&mut self) {
         self.chunk
-            .write_opcode(chunk::OpCode::Return, self.prev_token.line);
+            .write_opcode(OpCode::Return, self.prev_token.line);
     }
 
-    fn emit_constant(&mut self, value: value::Value) -> Result<(), CompileError<'a>> {
+    fn emit_constant(&mut self, value: Value) -> Result<(), CompileError<'a>> {
         const MAX24BIT: usize = (1 << 24) - 1;
 
         let idx = self.chunk.add_constant(value);
 
         if idx <= u8::MAX as usize {
-            self.emit_opcode(chunk::OpCode::Constant);
+            self.emit_opcode(OpCode::Constant);
             self.emit_byte(idx as u8);
             Ok(())
         } else if idx <= MAX24BIT {
-            self.emit_opcode(chunk::OpCode::ConstantLong);
+            self.emit_opcode(OpCode::ConstantLong);
             self.chunk.write_as_24bit_int(idx, self.prev_token.line);
             Ok(())
         } else {
@@ -581,7 +602,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn get_rule(&self, kind: token::TokenKind) -> &ParseRule<'a> {
+    fn get_rule(&self, kind: TokenKind) -> &ParseRule<'a, 'b> {
         &Self::RULES[kind.as_usize()]
     }
 
@@ -590,8 +611,8 @@ impl<'a> Compiler<'a> {
         eprintln!("[line {}] Error", err.token.line);
 
         match err.token.kind {
-            token::TokenKind::Eof => eprint!(" at end of file"),
-            token::TokenKind::Error => {}
+            TokenKind::Eof => eprint!(" at end of file"),
+            TokenKind::Error => {}
             _ => eprint!(" at '{}'", err.token.lexeme),
         }
 

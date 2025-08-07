@@ -1,4 +1,4 @@
-use super::token;
+use super::token::{Token, TokenKind};
 
 pub struct Scanner<'a> {
     source: &'a str,
@@ -28,7 +28,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    pub fn scan_token(&mut self) -> token::Token<'a> {
+    pub fn scan_token(&mut self) -> Token<'a> {
         if let Some(err) = self.skip_whitespace() {
             return err;
         }
@@ -38,99 +38,99 @@ impl<'a> Scanner<'a> {
         let c = self.advance();
 
         if c.is_none() {
-            return self.make_token(token::TokenKind::Eof);
+            return self.make_token(TokenKind::Eof);
         }
 
         let c = c.unwrap();
 
         match c {
-            '(' => self.make_token(token::TokenKind::LeftParen),
-            ')' => self.make_token(token::TokenKind::RightParen),
-            '{' => self.make_token(token::TokenKind::LeftBrace),
-            '}' => self.make_token(token::TokenKind::RightBrace),
-            ';' => self.make_token(token::TokenKind::Semicolon),
-            '?' => self.make_token(token::TokenKind::Question),
-            ':' => self.make_token(token::TokenKind::Colon),
-            ',' => self.make_token(token::TokenKind::Comma),
-            '.' => self.make_token(token::TokenKind::Dot),
+            '(' => self.make_token(TokenKind::LeftParen),
+            ')' => self.make_token(TokenKind::RightParen),
+            '{' => self.make_token(TokenKind::LeftBrace),
+            '}' => self.make_token(TokenKind::RightBrace),
+            ';' => self.make_token(TokenKind::Semicolon),
+            '?' => self.make_token(TokenKind::Question),
+            ':' => self.make_token(TokenKind::Colon),
+            ',' => self.make_token(TokenKind::Comma),
+            '.' => self.make_token(TokenKind::Dot),
             '-' => match self.peek() {
                 Some('=') => {
                     self.advance();
 
-                    self.make_token(token::TokenKind::MinusEqual)
+                    self.make_token(TokenKind::MinusEqual)
                 }
                 Some('-') => {
                     self.advance();
 
-                    self.make_token(token::TokenKind::MinusMinus)
+                    self.make_token(TokenKind::MinusMinus)
                 }
-                _ => self.make_token(token::TokenKind::Minus),
+                _ => self.make_token(TokenKind::Minus),
             },
             '+' => match self.peek() {
                 Some('=') => {
                     self.advance();
 
-                    self.make_token(token::TokenKind::PlusEqual)
+                    self.make_token(TokenKind::PlusEqual)
                 }
                 Some('+') => {
                     self.advance();
 
-                    self.make_token(token::TokenKind::PlusPlus)
+                    self.make_token(TokenKind::PlusPlus)
                 }
-                _ => self.make_token(token::TokenKind::Plus),
+                _ => self.make_token(TokenKind::Plus),
             },
             '/' => {
                 if let Some('=') = self.peek() {
                     self.advance();
 
-                    self.make_token(token::TokenKind::SlashEqual)
+                    self.make_token(TokenKind::SlashEqual)
                 } else {
-                    self.make_token(token::TokenKind::Slash)
+                    self.make_token(TokenKind::Slash)
                 }
             }
             '*' => {
                 if let Some('=') = self.peek() {
                     self.advance();
 
-                    self.make_token(token::TokenKind::StarEqual)
+                    self.make_token(TokenKind::StarEqual)
                 } else {
-                    self.make_token(token::TokenKind::Star)
+                    self.make_token(TokenKind::Star)
                 }
             }
             '!' => {
                 if let Some('=') = self.peek() {
                     self.advance();
 
-                    self.make_token(token::TokenKind::BangEqual)
+                    self.make_token(TokenKind::BangEqual)
                 } else {
-                    self.make_token(token::TokenKind::Bang)
+                    self.make_token(TokenKind::Bang)
                 }
             }
             '=' => {
                 if let Some('=') = self.peek() {
                     self.advance();
 
-                    self.make_token(token::TokenKind::EqualEqual)
+                    self.make_token(TokenKind::EqualEqual)
                 } else {
-                    self.make_token(token::TokenKind::Equal)
+                    self.make_token(TokenKind::Equal)
                 }
             }
             '>' => {
                 if let Some('=') = self.peek() {
                     self.advance();
 
-                    self.make_token(token::TokenKind::GreaterEqual)
+                    self.make_token(TokenKind::GreaterEqual)
                 } else {
-                    self.make_token(token::TokenKind::Greater)
+                    self.make_token(TokenKind::Greater)
                 }
             }
             '<' => {
                 if let Some('=') = self.peek() {
                     self.advance();
 
-                    self.make_token(token::TokenKind::LessEqual)
+                    self.make_token(TokenKind::LessEqual)
                 } else {
-                    self.make_token(token::TokenKind::Less)
+                    self.make_token(TokenKind::Less)
                 }
             }
             '"' => self.scan_string(),
@@ -164,12 +164,12 @@ impl<'a> Scanner<'a> {
         self.lookahead[1].map(|(_, c)| c)
     }
 
-    fn scan_string(&mut self) -> token::Token<'a> {
+    fn scan_string(&mut self) -> Token<'a> {
         loop {
             match self.peek() {
                 Some('"') => {
                     self.advance(); // Consume the closing quote
-                    return self.make_token(token::TokenKind::String);
+                    return self.make_token(TokenKind::String);
                 }
                 Some(_) => {
                     self.advance();
@@ -181,7 +181,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn scan_number(&mut self) -> token::Token<'a> {
+    fn scan_number(&mut self) -> Token<'a> {
         self.consume_digits();
 
         // check for decimal point
@@ -192,10 +192,10 @@ impl<'a> Scanner<'a> {
             self.consume_digits();
         }
 
-        self.make_token(token::TokenKind::Number)
+        self.make_token(TokenKind::Number)
     }
 
-    fn scan_identifier(&mut self) -> token::Token<'a> {
+    fn scan_identifier(&mut self) -> Token<'a> {
         loop {
             match self.peek() {
                 Some(c) if c.is_digit(10) || Self::is_alpha(c) => {
@@ -208,29 +208,29 @@ impl<'a> Scanner<'a> {
         self.make_token(self.resolve_identifier_kind())
     }
 
-    fn resolve_identifier_kind(&self) -> token::TokenKind {
+    fn resolve_identifier_kind(&self) -> TokenKind {
         let identifier = &self.source[self.start_offset..self.curr_offset];
 
         match identifier {
-            "and" => token::TokenKind::And,
-            "break" => token::TokenKind::Break,
-            "class" => token::TokenKind::Class,
-            "continue" => token::TokenKind::Continue,
-            "else" => token::TokenKind::Else,
-            "false" => token::TokenKind::False,
-            "for" => token::TokenKind::For,
-            "fun" => token::TokenKind::Fun,
-            "if" => token::TokenKind::If,
-            "nil" => token::TokenKind::Nil,
-            "or" => token::TokenKind::Or,
-            "print" => token::TokenKind::Print,
-            "return" => token::TokenKind::Return,
-            "super" => token::TokenKind::Super,
-            "this" => token::TokenKind::This,
-            "true" => token::TokenKind::True,
-            "var" => token::TokenKind::Var,
-            "while" => token::TokenKind::While,
-            _ => token::TokenKind::Identifier, // Default to Identifier
+            "and" => TokenKind::And,
+            "break" => TokenKind::Break,
+            "class" => TokenKind::Class,
+            "continue" => TokenKind::Continue,
+            "else" => TokenKind::Else,
+            "false" => TokenKind::False,
+            "for" => TokenKind::For,
+            "fun" => TokenKind::Fun,
+            "if" => TokenKind::If,
+            "nil" => TokenKind::Nil,
+            "or" => TokenKind::Or,
+            "print" => TokenKind::Print,
+            "return" => TokenKind::Return,
+            "super" => TokenKind::Super,
+            "this" => TokenKind::This,
+            "true" => TokenKind::True,
+            "var" => TokenKind::Var,
+            "while" => TokenKind::While,
+            _ => TokenKind::Identifier, // Default to Identifier
         }
     }
 
@@ -245,7 +245,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn skip_whitespace(&mut self) -> Option<token::Token<'a>> {
+    fn skip_whitespace(&mut self) -> Option<Token<'a>> {
         loop {
             match self.peek() {
                 Some(' ') => {
@@ -328,17 +328,17 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn make_token(&self, kind: token::TokenKind) -> token::Token<'a> {
-        token::Token {
+    fn make_token(&self, kind: TokenKind) -> Token<'a> {
+        Token {
             kind,
             lexeme: &self.source[self.start_offset..self.curr_offset],
             line: self.curr_line,
         }
     }
 
-    fn make_error_token(&self, err: &'static str) -> token::Token<'a> {
-        token::Token {
-            kind: token::TokenKind::Error,
+    fn make_error_token(&self, err: &'static str) -> Token<'a> {
+        Token {
+            kind: TokenKind::Error,
             lexeme: err,
             line: self.curr_line,
         }
@@ -377,8 +377,8 @@ mod tests {
 
             loop {
                 match scanner.scan_token() {
-                    token @ token::Token {
-                        kind: token::TokenKind::Eof,
+                    token @ Token {
+                        kind: TokenKind::Eof,
                         lexeme: _,
                         line: _,
                     } => {

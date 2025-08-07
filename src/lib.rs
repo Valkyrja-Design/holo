@@ -1,6 +1,8 @@
 pub mod chunk;
 pub mod compiler;
 pub mod disassembler;
+pub mod gc;
+pub mod object;
 pub mod scanner;
 pub mod token;
 pub mod value;
@@ -11,10 +13,11 @@ use std::fs;
 pub fn interpret(path: &str) -> vm::InterpretResult {
     match fs::read_to_string(path) {
         Ok(source) => {
-            let mut compiler = compiler::Compiler::new(&source);
+            let mut gc = gc::GC::new();
+            let compiler = compiler::Compiler::new(&source, &mut gc);
 
             if let Some(chunk) = compiler.compile() {
-                let mut vm = vm::VM::new(chunk);
+                let mut vm = vm::VM::new(chunk, &mut gc);
                 vm.run()
             } else {
                 vm::InterpretResult::CompileError
@@ -25,6 +28,7 @@ pub fn interpret(path: &str) -> vm::InterpretResult {
             vm::InterpretResult::CompileError
         }
     }
+    // vm::InterpretResult::Ok
 }
 
 #[cfg(test)]
@@ -57,5 +61,26 @@ mod tests {
         let path = "./tests/expressions/logical.holo";
 
         assert_eq!(interpret(path), vm::InterpretResult::Ok);
+    }
+
+    #[test]
+    fn string() {
+        let path = "./tests/expressions/string.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::Ok);
+    }
+
+    #[test]
+    fn string_concate() {
+        let path = "./tests/expressions/string_concate.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::Ok);
+    }
+
+    #[test]
+    fn string_concate_error() {
+        let path = "./tests/expressions/string_concate_error.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::RuntimeError);
     }
 }
