@@ -6,24 +6,24 @@ pub enum InterpretResult {
     InterpretRuntimeError,
 }
 
-pub struct VM<'a> {
-    chunk: &'a chunk::Chunk,
+pub struct VM {
+    source: String,
+    chunk: chunk::Chunk,
     ip: usize,
     stack: Vec<value::Value>,
-    disassembler: disassembler::Diassembler<'a>,
 }
 
-impl<'a> VM<'a> {
-    fn new(chunk: &'a mut chunk::Chunk) -> Self {
+impl VM {
+    fn new(source: String) -> Self {
         VM {
-            chunk,
+            source,
+            chunk: chunk::Chunk::default(),
             ip: 0,
             stack: vec![],
-            disassembler: disassembler::Diassembler::new(chunk, "some chunk"),
         }
     }
 
-    fn run(&mut self) -> InterpretResult {
+    fn interpret(&mut self) -> InterpretResult {
         loop {
             match self.read_opcode() {
                 chunk::OpCode::OpConstant => {
@@ -164,10 +164,6 @@ mod tests {
         }
 
         chunk.write_opcode(chunk::OpCode::OpReturn, 3);
-
-        let mut vm = VM::new(&mut chunk);
-
-        vm.run();
     }
 
     #[test]
@@ -192,32 +188,24 @@ mod tests {
         chunk.write_opcode(chunk::OpCode::OpAdd, 4);
         chunk.write_opcode(chunk::OpCode::OpSub, 5);
         chunk.write_opcode(chunk::OpCode::OpDivide, 6);
-        
+
         chunk.write_opcode(chunk::OpCode::OpReturn, 7);
-
-        let mut vm = VM::new(&mut chunk);
-
-        vm.run();
     }
 
     #[test]
     fn benchmark_negation() {
         let mut chunk = chunk::Chunk::new();
         const INSTR_COUNT: usize = 1000000000;
-        
+
         let idx = chunk.add_constant(125.25);
 
         chunk.write_opcode(chunk::OpCode::OpConstantLong, 2);
         chunk.write_as_24bit_int(idx, 2);
-        
+
         for _ in 0..INSTR_COUNT {
             chunk.write_opcode(chunk::OpCode::OpNegate, 3);
         }
 
         chunk.write_opcode(chunk::OpCode::OpReturn, 3);
-
-        let mut vm = VM::new(&mut chunk);
-
-        vm.run();
     }
 }

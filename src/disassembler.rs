@@ -1,63 +1,52 @@
 use super::chunk;
 
-pub struct Diassembler<'a> {
-    chunk: &'a chunk::Chunk,
-    chunk_name: &'a str,
+pub fn disassemble(chunk: &chunk::Chunk, chunk_name: &str) {
+    println!("== {} ==", chunk_name);
+
+    let mut offset: usize = 0;
+
+    while offset < chunk.code.len() {
+        offset = disassemble_instr(chunk, offset);
+    }
 }
 
-impl<'a> Diassembler<'a> {
-    pub fn new(chunk: &'a chunk::Chunk, chunk_name: &'a str) -> Diassembler<'a> {
-        Diassembler { chunk, chunk_name }
+pub fn disassemble_instr(chunk: &chunk::Chunk, offset: usize) -> usize {
+    print!("{:04} {:04} ", offset, chunk.get_line_of(offset));
+
+    let instr = chunk.code[offset];
+
+    match chunk::OpCode::from(instr) {
+        chunk::OpCode::OpConstant => const_instr(chunk, offset),
+        chunk::OpCode::OpConstantLong => const_long_instr(chunk, offset),
+        chunk::OpCode::OpReturn => simple_instr("OP_RETURN", offset),
+        chunk::OpCode::OpNegate => simple_instr("OP_NEGATE", offset),
+        chunk::OpCode::OpAdd => simple_instr("OP_ADD", offset),
+        chunk::OpCode::OpSub => simple_instr("OP_SUB", offset),
+        chunk::OpCode::OpMult => simple_instr("OP_MULT", offset),
+        chunk::OpCode::OpDivide => simple_instr("OP_DIVIDE", offset),
     }
+}
 
-    pub fn disassemble(&self) {
-        println!("== {} ==", self.chunk_name);
+fn const_instr(chunk: &chunk::Chunk, offset: usize) -> usize {
+    let idx = chunk.code[offset + 1];
 
-        let mut offset: usize = 0;
+    println!("OP_CONSTANT {}", chunk.constants[idx as usize]);
 
-        while offset < self.chunk.code.len() {
-            offset = self.disassemble_instr(offset);
-        }
-    }
+    offset + 2
+}
 
-    pub fn disassemble_instr(&self, offset: usize) -> usize {
-        print!("{:04} {:04} ", offset, self.chunk.get_line_of(offset));
+fn const_long_instr(chunk: &chunk::Chunk, offset: usize) -> usize {
+    let idx = chunk::Chunk::read_as_24bit_int(&chunk.code[offset + 1..offset + 4]);
 
-        let instr = self.chunk.code[offset];
+    println!("OP_CONSTANT_LONG {}", chunk.constants[idx]);
 
-        match chunk::OpCode::from(instr) {
-            chunk::OpCode::OpConstant => self.const_instr(offset),
-            chunk::OpCode::OpConstantLong => self.const_long_instr(offset),
-            chunk::OpCode::OpReturn => self.simple_instr("OP_RETURN", offset),
-            chunk::OpCode::OpNegate => self.simple_instr("OP_NEGATE", offset),
-            chunk::OpCode::OpAdd => self.simple_instr("OP_ADD", offset),
-            chunk::OpCode::OpSub => self.simple_instr("OP_SUB", offset),
-            chunk::OpCode::OpMult => self.simple_instr("OP_MULT", offset),
-            chunk::OpCode::OpDivide => self.simple_instr("OP_DIVIDE", offset),
-        }
-    }
+    offset + 4
+}
 
-    fn const_instr(&self, offset: usize) -> usize {
-        let idx = self.chunk.code[offset + 1];
+fn simple_instr(name: &str, offset: usize) -> usize {
+    println!("{}", name);
 
-        println!("OP_CONSTANT {}", self.chunk.constants[idx as usize]);
-
-        offset + 2
-    }
-
-    fn const_long_instr(&self, offset: usize) -> usize {
-        let idx = chunk::Chunk::read_as_24bit_int(&self.chunk.code[offset + 1..offset + 4]);
-
-        println!("OP_CONSTANT_LONG {}", self.chunk.constants[idx]);
-
-        offset + 4
-    }
-
-    fn simple_instr(&self, name: &str, offset: usize) -> usize {
-        println!("{}", name);
-
-        offset + 1
-    }
+    offset + 1
 }
 
 #[cfg(test)]
@@ -89,8 +78,6 @@ mod tests {
 
         chunk.write_opcode(chunk::OpCode::OpReturn, 7);
 
-        let disassembler = Diassembler::new(&chunk, "simple test chunk");
-
-        disassembler.disassemble();
+        disassemble(&chunk, "simple test chunk");
     }
 }
