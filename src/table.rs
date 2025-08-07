@@ -5,10 +5,8 @@ use std::{
     ptr::NonNull,
 };
 
-// SAFETY: the pointer must refer to a valid and live `str`.
-// That's the responsibility of the GC. It should also be
-// immutable, GC should remove it if the corresponding mem
-// is freed
+// SAFETY: the pointer must refer to a valid and live `str`. That's the responsibility of the GC.
+// It should also be immutable, GC should remove it if the corresponding mem is freed
 #[derive(Clone, Copy)]
 struct StrKey(NonNull<str>);
 
@@ -38,13 +36,13 @@ impl StringInternTable {
     }
 
     pub fn intern_slice(&mut self, value: &str, gc: &mut GC) -> *mut String {
-        // only uses the `value` for comparison purposes
+        // Only uses the `value` for comparison purposes
         let key = StrKey(NonNull::from(value));
         self.intern_inner(key, || gc.alloc_string_ptr(value.to_string()))
     }
 
     pub fn intern_owned(&mut self, value: String, gc: &mut GC) -> *mut String {
-        // only uses the `value` for comparison purposes
+        // Only uses the `value` for comparison purposes
         let key = StrKey(NonNull::from(value.as_str()));
         self.intern_inner(key, || gc.alloc_string_ptr(value))
     }
@@ -68,6 +66,11 @@ impl StringInternTable {
             self.0.insert(key, handle);
             handle
         }
+    }
+
+    /// Clears all unmarked interned strings
+    pub fn clear_unmarked(&mut self, gc: &mut GC) {
+        self.0.retain(|_, &mut handle| gc.is_string_marked(handle));
     }
 }
 

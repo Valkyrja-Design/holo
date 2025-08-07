@@ -7,6 +7,8 @@ use std::path::PathBuf;
 
 #[test]
 fn variable() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
     // base directory containing the test inputs and expected outputs
     let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")

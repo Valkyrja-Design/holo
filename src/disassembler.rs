@@ -110,7 +110,7 @@ fn closure_instr(chunk: &Chunk, mut offset: usize) -> usize {
     offset += 2;
     println!("CLOSURE {}", idx);
 
-    // get the number of upvalues from the closure
+    // Get the number of upvalues from the closure
     let function = chunk.constants[idx as usize].as_function().unwrap();
 
     for _ in 0..function.upvalue_count {
@@ -136,7 +136,7 @@ fn closure_instr_long(chunk: &Chunk, mut offset: usize) -> usize {
     println!("CLOSURE_LONG {}", idx);
     offset += 4;
 
-    // get the number of upvalues from the closure
+    // Get the number of upvalues from the closure
     let function = chunk.constants[idx as usize].as_function().unwrap();
 
     for _ in 0..function.upvalue_count {
@@ -165,7 +165,7 @@ mod tests {
     fn test_chunk() {
         let mut chunk = Chunk::default();
 
-        // constants
+        // Constants
         for _ in 0..2 {
             let idx = chunk.add_constant(Value::Number(1.23)) as u8;
 
@@ -180,7 +180,7 @@ mod tests {
             chunk.write_as_24bit_int(idx, 2);
         }
 
-        // arithmetic
+        // Arithmetic
         chunk.write_opcode(OpCode::Negate, 3);
         chunk.write_opcode(OpCode::Add, 4);
         chunk.write_opcode(OpCode::Sub, 5);
@@ -192,7 +192,7 @@ mod tests {
         chunk.write_opcode(OpCode::True, 7);
         chunk.write_opcode(OpCode::False, 7);
 
-        // logical operations
+        // Logical operations
         chunk.write_opcode(OpCode::Not, 8);
         chunk.write_opcode(OpCode::Equal, 8);
         chunk.write_opcode(OpCode::NotEqual, 8);
@@ -205,7 +205,7 @@ mod tests {
         chunk.write_opcode(OpCode::Pop, 9);
         chunk.write_opcode(OpCode::Ternary, 9);
 
-        // global variable operations
+        // Global variable operations
         chunk.write_opcode(OpCode::DefineGlobal, 10);
         chunk.write_byte(5, 10);
 
@@ -224,7 +224,7 @@ mod tests {
         chunk.write_opcode(OpCode::SetGlobalLong, 12);
         chunk.write_as_24bit_int(500, 12);
 
-        // local variable operations
+        // Local variable operations
         chunk.write_opcode(OpCode::GetLocal, 13);
         chunk.write_byte(1, 13);
 
@@ -237,14 +237,14 @@ mod tests {
         chunk.write_opcode(OpCode::SetLocalLong, 14);
         chunk.write_as_24bit_int(257, 14);
 
-        // stack manipulation
+        // Stack manipulation
         chunk.write_opcode(OpCode::PopN, 15);
         chunk.write_byte(3, 15);
 
         chunk.write_opcode(OpCode::PopNLong, 15);
         chunk.write_as_24bit_int(300, 15);
 
-        // control flow
+        // Control flow
         chunk.write_opcode(OpCode::Return, 7);
 
         chunk.write_opcode(OpCode::Jump, 8);

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 pub struct SymbolTable<'a> {
     symbols: HashMap<&'a str, usize>,
-    /// owned names in insertion order, index → name
+    /// Owned names in insertion order, index → name
     names: Vec<String>,
 }
 
@@ -36,7 +36,7 @@ impl<'a> SymbolTable<'a> {
         self.names.len()
     }
 
-    /// returns the internal list of variable names
+    /// Returns the internal list of variable names
     pub fn names_as_owned(self) -> Vec<String> {
         self.names
     }

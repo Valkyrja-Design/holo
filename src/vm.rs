@@ -4,6 +4,7 @@ use super::{
     table::StringInternTable,
     value::{Closure, Function, Upvalue, Value},
 };
+use log::debug;
 use std::io::Write;
 
 #[derive(Clone, Copy)]
@@ -358,8 +359,11 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     // Push the closure first so that it can be captured by upvalues
                     self.push(Value::Closure(closure_ptr));
 
+                    // Attempt to trigger a garbage collection cycle
+                    self.attempt_gc();
+
                     // Initialize the upvalues
-                    for i in 0..upvalue_count {
+                    for _ in 0..upvalue_count {
                         let is_local = self.read_byte() == 1;
                         let index = self.read_byte() as usize;
 
@@ -369,7 +373,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                             self.upvalues()[index]
                         };
 
-                        closure.upvalues[i] = upvalue;
+                        closure.upvalues.push(upvalue);
                     }
                 }
                 OpCode::ClosureLong => {
@@ -596,6 +600,10 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 *left = self
                     .str_intern_table
                     .intern_owned(concatenated_str, &mut self.gc);
+
+                // Attempt to trigger a garbage collection cycle
+                self.attempt_gc();
+
                 Some(())
             },
             _ => {
@@ -653,6 +661,10 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                         upvalue,
                     },
                 );
+
+                // Attempt to trigger a garbage collection cycle
+                self.attempt_gc();
+
                 upvalue
             }
         }
@@ -679,6 +691,56 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 upvalue.location = &mut upvalue.closed as *mut Value;
             }
         }
+    }
+
+    /// Attempts to trigger a garbage collection cycle
+    fn attempt_gc(&mut self) {
+        if self.gc.should_collect() {
+            self.collect_garbage();
+        }
+    }
+
+    /// Do a garbage collection cycle
+    fn collect_garbage(&mut self) {
+        // Log the start of the garbage collection cycle for debugging
+        debug!("-- Start of garbage collection cycle --");
+
+        // Clear previous previous garbage collection cycle's marks
+        self.gc.clear_marks();
+
+        // Mark all values that are reachable from the call stack
+        for frame in &self.call_stack {
+            self.gc.mark_closure(frame.closure);
+        }
+
+        // Mark all values that are reachable from the open upvalues
+        for open_upvalue in &self.open_upvalues {
+            self.gc.mark_upvalue(open_upvalue.upvalue);
+        }
+
+        // Mark all values that are reachable from the stack
+        for value in &self.stack {
+            self.gc.mark_value(*value);
+        }
+
+        // Mark all values that are reachable from the globals
+        for global in &self.globals {
+            if let Some(value) = global {
+                self.gc.mark_value(*value);
+            }
+        }
+
+        // Mark all values that are reachable from the roots
+        self.gc.trace_references();
+
+        // Clear all interned strings that are not marked
+        self.str_intern_table.clear_unmarked(&mut self.gc);
+
+        // Sweep all values that are not reachable
+        self.gc.sweep();
+
+        // Log the end of the garbage collection cycle for debugging
+        debug!("-- End of garbage collection cycle --");
     }
 
     // TRY: Stash the current frame's chunk in a local variable

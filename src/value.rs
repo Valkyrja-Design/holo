@@ -30,13 +30,10 @@ pub struct Closure {
 
 impl Closure {
     pub fn new(function: *mut Function, upvalue_count: usize) -> Self {
-        let mut upvalues = Vec::with_capacity(upvalue_count);
-
-        for _ in 0..upvalue_count {
-            upvalues.push(std::ptr::null_mut());
+        Self {
+            function,
+            upvalues: Vec::with_capacity(upvalue_count),
         }
-
-        Self { function, upvalues }
     }
 
     pub fn function(&self) -> &Function {

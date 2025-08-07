@@ -1,7 +1,7 @@
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TokenKind {
-    // parenthesis
+    // Parenthesis
     LeftParen,
     RightParen,
     LeftBrace,
@@ -11,7 +11,7 @@ pub enum TokenKind {
     Question,
     Colon,
 
-    // operators
+    // Operators
     Comma,
     Dot,
     Minus,
@@ -33,12 +33,12 @@ pub enum TokenKind {
     StarEqual,
     SlashEqual,
 
-    // literals
+    // Literals
     Identifier,
     String,
     Number,
 
-    // keywords,
+    // Keywords,
     And,
     Class,
     Else,

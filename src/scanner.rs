@@ -185,11 +185,11 @@ impl<'a> Scanner<'a> {
     fn scan_number(&mut self) -> Token<'a> {
         self.consume_digits();
 
-        // check for decimal point
+        // Check for decimal point
         if let Some('.') = self.peek() {
             self.advance();
 
-            // optionally consume digits after '.'
+            // Optionally consume digits after '.'
             self.consume_digits();
         }
 
@@ -265,7 +265,7 @@ impl<'a> Scanner<'a> {
                 Some('/') => {
                     match self.peek_next() {
                         Some('/') => {
-                            // consume until end of line
+                            // Consume until end of line
                             loop {
                                 match self.peek() {
                                     Some('\n') => {
@@ -281,11 +281,11 @@ impl<'a> Scanner<'a> {
                             }
                         }
                         Some('*') => {
-                            // consume "/*"
+                            // Consume "/*"
                             self.advance();
                             self.advance();
 
-                            // consume until "*/"
+                            // Consume until "*/"
                             'l1: loop {
                                 match self.peek() {
                                     Some('*') => match self.peek_next() {

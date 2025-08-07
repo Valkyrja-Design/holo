@@ -530,7 +530,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         // Fill in the upvalue count
         function.upvalue_count = upvalues.len();
 
-        // Allocate the function using the new direct allocation
+        // Allocate the function value
         let func_value = self.gc.alloc_function(function);
 
         // Emit a `Closure` instruction to wrap the function at runtime

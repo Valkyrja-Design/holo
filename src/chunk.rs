@@ -3,7 +3,7 @@ use super::value;
 #[derive(Clone, Copy)]
 pub enum OpCode {
     Constant,
-    ConstantLong, // stores index as 24 bit integer
+    ConstantLong,
     Nil,
     True,
     False,
