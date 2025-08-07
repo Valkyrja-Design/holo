@@ -296,6 +296,9 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
 
                     self.stack.truncate(self.stack.len() - n);
                 }
+                OpCode::JumpIfFalse => {},
+                OpCode::JumpIfTrue => {},
+                OpCode::Jump => {},
             }
         }
     }
@@ -421,6 +424,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         }
 
         let right = self.stack.pop().unwrap();
+        
         match (self.stack.last_mut().unwrap(), right) {
             (Value::Number(_), Value::Number(0.0)) => self.runtime_error("Division by 0"),
             (Value::Number(left), Value::Number(right)) => {
@@ -452,7 +456,6 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         let idx = Chunk::read_as_24bit_int(&self.chunk.code[self.ip..self.ip + 3]);
 
         self.ip += 3;
-
         self.chunk.constants[idx]
     }
 
@@ -461,17 +464,17 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
     }
 
     fn read_int_long(&mut self) -> usize {
-        let idx = Chunk::read_as_24bit_int(&self.chunk.code[self.ip..self.ip + 3]);
+        let ret = Chunk::read_as_24bit_int(&self.chunk.code[self.ip..self.ip + 3]);
+        
         self.ip += 3;
-
-        idx
+        ret
     }
 
     fn runtime_error(&mut self, err: &str) -> InterpretResult {
         let instr = self.ip - 1;
         let line = self.chunk.get_line_of(instr);
-
         let _ = writeln!(self.err_stream, "[line {line}] Runtime error: {err}");
+        
         InterpretResult::RuntimeError
     }
 }

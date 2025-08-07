@@ -35,6 +35,9 @@ pub enum OpCode {
     SetLocalLong,
     PopN,
     PopNLong,
+    JumpIfFalse,
+    JumpIfTrue,
+    Jump,
 }
 
 impl From<u8> for OpCode {
@@ -73,7 +76,10 @@ impl From<u8> for OpCode {
             30 => Self::SetLocalLong,
             31 => Self::PopN,
             32 => Self::PopNLong,
-            _ => panic!("invalid opcode!"),
+            33 => Self::JumpIfFalse,
+            34 => Self::JumpIfTrue,
+            35 => Self::Jump,
+            _ => unreachable!("invalid opcode!"),
         }
     }
 }
@@ -114,6 +120,9 @@ impl From<OpCode> for u8 {
             OpCode::SetLocalLong => 30,
             OpCode::PopN => 31,
             OpCode::PopNLong => 32,
+            OpCode::JumpIfFalse => 33,
+            OpCode::JumpIfTrue => 34,
+            OpCode::Jump => 35,
         }
     }
 }
@@ -184,9 +193,18 @@ impl Chunk {
         self.write_bytes(&bytes, &[line; 3]);
     }
 
+    pub fn write_as_16bit_int(&mut self, value: usize, line: usize) {
+        const MASK: usize = (1usize << 8) - 1;
+        let mut bytes: [u8; 2] = [0; 2];
+
+        bytes[1] = (value & MASK) as u8;
+        bytes[0] = ((value >> 8) & MASK) as u8;
+
+        self.write_bytes(&bytes, &[line; 2]);
+    }
+
     pub fn add_constant(&mut self, value: value::Value) -> usize {
         self.constants.push(value);
-
         self.constants.len() - 1
     }
 
@@ -196,6 +214,13 @@ impl Chunk {
         let c = bytes[2] as usize;
 
         (a << 16) | (b << 8) | c
+    }
+
+    pub fn read_as_16bit_int(bytes: &[u8]) -> usize {
+        let a = bytes[0] as usize;
+        let b = bytes[1] as usize;
+
+        (a << 8) | b
     }
 
     pub fn get_line_of(&self, byte_idx: usize) -> usize {
