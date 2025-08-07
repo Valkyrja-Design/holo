@@ -1,1 +1,2 @@
-[line 3] Redeclaration of variable 'a', first defined at line 2
+[line 3] Error at 'a': Redeclaration of variable 'a'
+[line 4] Error at '}': Expected expression

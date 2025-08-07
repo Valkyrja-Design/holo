@@ -1,12 +1,8 @@
-use std::ptr::NonNull;
-
-use crate::value;
-
 use super::{
     chunk::{Chunk, OpCode},
     gc,
     object::Object,
-    table::{StringInternTable, StringTable},
+    table::StringInternTable,
     value::Value,
 };
 
@@ -259,6 +255,40 @@ impl VM {
                         return InterpretResult::RuntimeError;
                     }
                 }
+                OpCode::GetLocal => {
+                    let index = self.read_int();
+
+                    self.get_local(index);
+                }
+                OpCode::GetLocalLong => {
+                    let index = self.read_int_long();
+
+                    self.get_local(index);
+                }
+                OpCode::SetLocal => {
+                    let index = self.read_int();
+
+                    if self.set_local(index) != InterpretResult::Ok {
+                        return InterpretResult::RuntimeError;
+                    }
+                }
+                OpCode::SetLocalLong => {
+                    let index = self.read_int_long();
+
+                    if self.set_local(index) != InterpretResult::Ok {
+                        return InterpretResult::RuntimeError;
+                    }
+                }
+                OpCode::PopN => {
+                    let n = self.read_int();
+
+                    self.stack.truncate(self.stack.len() - n);
+                }
+                OpCode::PopNLong => {
+                    let n = self.read_int_long();
+
+                    self.stack.truncate(self.stack.len() - n);
+                }
             }
         }
     }
@@ -309,6 +339,19 @@ impl VM {
                 format!("Undefined variable '{}'", self.global_var_names[index]).as_str(),
             ),
         }
+    }
+
+    fn get_local(&mut self, index: usize) {
+        self.stack.push(self.stack[index]);
+    }
+
+    fn set_local(&mut self, index: usize) -> InterpretResult {
+        if self.stack.len() < 1 {
+            return InterpretResult::RuntimeError;
+        }
+
+        self.stack[index] = *self.stack.last().unwrap();
+        InterpretResult::Ok
     }
 
     fn binary_number_op<F>(&mut self, op: F, err: &str) -> InterpretResult

@@ -191,4 +191,102 @@ mod tests {
 
         assert_eq!(interpret(path), vm::InterpretResult::RuntimeError);
     }
+
+    #[test]
+    fn assignment_local() {
+        let path = "./tests/assignment/local.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::Ok);
+    }
+
+    #[test]
+    fn duplicate_local() {
+        let path = "./tests/variable/duplicate_local.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::CompileError);
+    }
+
+    #[test]
+    fn in_middle_of_block() {
+        let path = "./tests/variable/in_middle_of_block.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::Ok);
+    }
+
+    #[test]
+    fn in_nested_block() {
+        let path = "./tests/variable/in_nested_block.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::Ok);
+    }
+
+    #[test]
+    fn scope_reuse_in_different_blocks() {
+        let path = "./tests/variable/scope_reuse_in_different_blocks.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::Ok);
+    }
+
+    #[test]
+    fn shadow_and_local() {
+        let path = "./tests/variable/shadow_and_local.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::Ok);
+    }
+
+    #[test]
+    fn shadow_global() {
+        let path = "./tests/variable/shadow_global.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::Ok);
+    }
+
+    #[test]
+    fn shadow_local() {
+        let path = "./tests/variable/shadow_local.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::Ok);
+    }
+
+    #[test]
+    fn undefined_local() {
+        let path = "./tests/variable/undefined_local.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::RuntimeError);
+    }
+
+    #[test]
+    fn use_false_as_var() {
+        let path = "./tests/variable/use_false_as_var.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::CompileError);
+    }
+
+    #[test]
+    fn use_local_in_initializer() {
+        let path = "./tests/variable/use_local_in_initializer.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::CompileError);
+    }
+
+    #[test]
+    fn use_nil_as_var() {
+        let path = "./tests/variable/use_nil_as_var.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::CompileError);
+    }
+
+    #[test]
+    fn use_this_as_var() {
+        let path = "./tests/variable/use_this_as_var.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::CompileError);
+    }
+
+    #[test]
+    fn scope() {
+        let path = "./tests/block/scope.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::Ok);
+    }
 }

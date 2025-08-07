@@ -29,6 +29,12 @@ pub enum OpCode {
     GetGlobalLong,
     SetGlobal,
     SetGlobalLong,
+    GetLocal,
+    GetLocalLong,
+    SetLocal,
+    SetLocalLong,
+    PopN,
+    PopNLong,
 }
 
 impl From<u8> for OpCode {
@@ -61,6 +67,12 @@ impl From<u8> for OpCode {
             24 => Self::GetGlobalLong,
             25 => Self::SetGlobal,
             26 => Self::SetGlobalLong,
+            27 => Self::GetLocal,
+            28 => Self::GetLocalLong,
+            29 => Self::SetLocal,
+            30 => Self::SetLocalLong,
+            31 => Self::PopN,
+            32 => Self::PopNLong,
             _ => panic!("invalid opcode!"),
         }
     }
@@ -96,6 +108,12 @@ impl From<OpCode> for u8 {
             OpCode::GetGlobalLong => 24,
             OpCode::SetGlobal => 25,
             OpCode::SetGlobalLong => 26,
+            OpCode::GetLocal => 27,
+            OpCode::GetLocalLong => 28,
+            OpCode::SetLocal => 29,
+            OpCode::SetLocalLong => 30,
+            OpCode::PopN => 31,
+            OpCode::PopNLong => 32,
         }
     }
 }

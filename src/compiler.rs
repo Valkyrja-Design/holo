@@ -1,9 +1,6 @@
-use std::collections::HashMap;
-
 use super::{
     chunk::{Chunk, OpCode},
     gc::GC,
-    object::Object,
     scanner::Scanner,
     sym_table::SymbolTable,
     table::StringInternTable,
@@ -70,26 +67,33 @@ impl std::ops::Add<usize> for Precedence {
     }
 }
 
-pub struct Compiler<'a, 'b, 'c> {
+struct Local<'a> {
+    name: &'a str,
+    depth: i32,
+}
+
+pub struct Compiler<'a, 'b> {
     source: &'a str,
     scanner: Scanner<'a>,
     curr_token: Token<'a>,
     prev_token: Token<'a>,
     chunk: Chunk,
     gc: &'b mut GC,
-    str_intern_table: &'c mut StringInternTable,
+    str_intern_table: &'b mut StringInternTable,
     sym_table: SymbolTable<'a>,
+    locals: Vec<Local<'a>>,
+    curr_depth: i32,
     had_error: bool,
 }
 
-struct ParseRule<'a, 'b, 'c> {
-    prefix_rule: Option<fn(&mut Compiler<'a, 'b, 'c>, bool) -> Result<(), CompileError<'a>>>,
-    infix_rule: Option<fn(&mut Compiler<'a, 'b, 'c>, bool) -> Result<(), CompileError<'a>>>,
+struct ParseRule<'a, 'b> {
+    prefix_rule: Option<fn(&mut Compiler<'a, 'b>, bool) -> Result<(), CompileError<'a>>>,
+    infix_rule: Option<fn(&mut Compiler<'a, 'b>, bool) -> Result<(), CompileError<'a>>>,
     precedence: Precedence,
 }
 
-impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
-    const RULES: [ParseRule<'a, 'b, 'c>; 50] = [
+impl<'a, 'b> Compiler<'a, 'b> {
+    const RULES: [ParseRule<'a, 'b>; 50] = [
         ParseRule {
             prefix_rule: Some(Self::grouping),
             infix_rule: None,
@@ -345,7 +349,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
     pub fn new(
         source: &'a str,
         gc: &'b mut GC,
-        str_intern_table: &'c mut StringInternTable,
+        str_intern_table: &'b mut StringInternTable,
     ) -> Self {
         // initialize with dummy tokens
         Compiler {
@@ -365,6 +369,8 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             gc,
             str_intern_table,
             sym_table: SymbolTable::new(),
+            locals: Vec::new(),
+            curr_depth: 0,
             had_error: false,
         }
     }
@@ -409,7 +415,13 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         self.consume(TokenKind::Identifier, "Expected variable name")?;
 
         let name = self.prev_token.lexeme;
-        let index = self.sym_table.add(name);
+        let index;
+
+        if self.curr_depth > 0 {
+            index = self.declare_local(name)?;
+        } else {
+            index = self.sym_table.declare(name);
+        }
 
         // consume the initializer, if any
         if self.check(TokenKind::Equal) {
@@ -421,12 +433,17 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 
         self.consume(TokenKind::Semicolon, "Expected ';' at the end of statement")?;
 
-        self.emit_opcode_with_index(
-            OpCode::DefineGlobal,
-            OpCode::DefineGlobalLong,
-            index,
-            "Too many global variables in the program".to_string(),
-        )
+        if self.curr_depth > 0 {
+            self.mark_as_initialized(index);
+            Ok(())
+        } else {
+            self.emit_opcode_with_num(
+                OpCode::DefineGlobal,
+                OpCode::DefineGlobalLong,
+                index,
+                "Too many globals in the program".to_owned(),
+            )
+        }
     }
 
     fn statement(&mut self) -> Result<(), CompileError<'a>> {
@@ -435,7 +452,32 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
                 self.advance()?;
                 self.print_statement()
             }
+            TokenKind::LeftBrace => {
+                self.advance()?;
+                self.begin_scope();
+                self.block()?;
+                self.end_scope();
+                Ok(())
+            }
             _ => self.expression_statement(),
+        }
+    }
+
+    fn block(&mut self) -> Result<(), CompileError<'a>> {
+        loop {
+            match self.curr_token.kind {
+                TokenKind::RightBrace => {
+                    self.advance()?;
+                    return Ok(());
+                }
+                TokenKind::Eof => {
+                    return Err(CompileError::new(
+                        self.curr_token.to_owned(),
+                        "Expected closing '}' for the block".to_owned(),
+                    ))
+                }
+                _ => self.declaration()?,
+            }
         }
     }
 
@@ -461,26 +503,53 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 
     fn variable(&mut self, can_assign: bool) -> Result<(), CompileError<'a>> {
         let name = self.prev_token.lexeme;
-        let index = self.sym_table.add(name);
+        let local_idx = self.resolve_local(name);
 
-        match self.curr_token.kind {
-            TokenKind::Equal if can_assign => {
-                // this is an assignment expr
-                self.advance()?;
-                self.expression()?;
-                self.emit_opcode_with_index(
-                    OpCode::SetGlobal,
-                    OpCode::SetGlobalLong,
-                    index,
-                    "Too many global variables in the program".to_string(),
-                )
+        // pick local or global ops and final index
+        let (get_op, get_op_long, set_op, set_op_long, idx) = if local_idx != -1 {
+            if self.locals[local_idx as usize].depth == -1 {
+                return Err(CompileError::new(
+                    self.prev_token.to_owned(),
+                    format!("Cannot use variable '{}' in its own initializer", name),
+                ));
             }
-            _ => self.emit_opcode_with_index(
+
+            (
+                OpCode::GetLocal,
+                OpCode::GetLocalLong,
+                OpCode::SetLocal,
+                OpCode::SetLocalLong,
+                local_idx as usize,
+            )
+        } else {
+            let global_idx = self.sym_table.resolve(name);
+
+            (
                 OpCode::GetGlobal,
                 OpCode::GetGlobalLong,
-                index,
-                "Too many global variables in the program".to_string(),
-            ),
+                OpCode::SetGlobal,
+                OpCode::SetGlobalLong,
+                global_idx,
+            )
+        };
+
+        // assignment or read
+        if can_assign && self.curr_token.kind == TokenKind::Equal {
+            self.advance()?;
+            self.expression()?;
+            self.emit_opcode_with_num(
+                set_op,
+                set_op_long,
+                idx,
+                "Too many globals in the program".to_string(),
+            )
+        } else {
+            self.emit_opcode_with_num(
+                get_op,
+                get_op_long,
+                idx,
+                "Too many globals in the program".to_string(),
+            )
         }
     }
 
@@ -715,6 +784,66 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         self.emit_return();
     }
 
+    /// declare local but set its depth to -1 as a marker for "not initialized"
+    fn declare_local(&mut self, name: &'a str) -> Result<usize, CompileError<'a>> {
+        for local in self.locals.iter().rev() {
+            if local.depth != -1 && local.depth < self.curr_depth {
+                break;
+            }
+
+            if local.name == name {
+                return Err(CompileError::new(
+                    self.prev_token.to_owned(),
+                    format!("Redeclaration of variable '{}'", name),
+                ));
+            }
+        }
+
+        self.locals.push(Local { name, depth: -1 });
+
+        Ok(self.locals.len() - 1)
+    }
+
+    /// mark the local as being initialized by setting the depth to current depth
+    fn mark_as_initialized(&mut self, index: usize) {
+        self.locals[index].depth = self.curr_depth;
+    }
+
+    /// returns the index of the first declaration of the given local, -1 otherwise
+    fn resolve_local(&mut self, name: &'a str) -> i32 {
+        for (index, local) in self.locals.iter().rev().enumerate() {
+            if local.name == name {
+                return (self.locals.len() - index - 1) as i32;
+            }
+        }
+
+        -1
+    }
+
+    /// increases the current scope depth
+    fn begin_scope(&mut self) {
+        self.curr_depth += 1;
+    }
+
+    /// decreases the current scope depth and pops off all locals in the current scope
+    fn end_scope(&mut self) {
+        let mut locals_to_pop = 0;
+
+        while let Some(local) = self.locals.last() {
+            if local.depth != self.curr_depth {
+                break;
+            }
+
+            self.locals.pop();
+            locals_to_pop += 1;
+        }
+
+        self.curr_depth -= 1;
+        // this call won't throw error because declarations would've already done that
+        let _ =
+            self.emit_opcode_with_num(OpCode::PopN, OpCode::PopNLong, locals_to_pop, "".to_owned());
+    }
+
     fn emit_byte(&mut self, byte: u8) {
         self.chunk.write_byte(byte, self.prev_token.line);
     }
@@ -728,7 +857,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             .write_opcode(OpCode::Return, self.prev_token.line);
     }
 
-    fn emit_opcode_with_index(
+    fn emit_opcode_with_num(
         &mut self,
         opcode: OpCode,
         opcode_long: OpCode,
@@ -757,7 +886,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         value: Value,
     ) -> Result<(), CompileError<'a>> {
         let index = self.chunk.add_constant(value);
-        self.emit_opcode_with_index(
+        self.emit_opcode_with_num(
             opcode,
             opcode_long,
             index,
@@ -765,7 +894,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         )
     }
 
-    fn get_rule(&self, kind: TokenKind) -> &ParseRule<'a, 'b, 'c> {
+    fn get_rule(&self, kind: TokenKind) -> &ParseRule<'a, 'b> {
         &Self::RULES[kind.as_usize()]
     }
 

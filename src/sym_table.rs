@@ -15,7 +15,7 @@ impl<'a> SymbolTable<'a> {
     }
 
     /// Add a global (or return existing index) and store its owned name
-    pub fn add(&mut self, name: &'a str) -> usize {
+    pub fn declare(&mut self, name: &'a str) -> usize {
         if let Some(&idx) = self.symbols.get(name) {
             idx
         } else {
@@ -27,8 +27,8 @@ impl<'a> SymbolTable<'a> {
     }
 
     /// Resolve a variable name to its index (declares if missing)
-    pub fn get(&mut self, name: &'a str) -> usize {
-        self.add(name)
+    pub fn resolve(&mut self, name: &'a str) -> usize {
+        self.declare(name)
     }
 
     /// Number of globals

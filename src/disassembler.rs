@@ -43,6 +43,12 @@ pub fn disassemble_instr(chunk: &Chunk, offset: usize) -> usize {
         OpCode::GetGlobalLong => long_instr_with_const(chunk, "GET_GLOBAL_LONG", offset),
         OpCode::SetGlobal => instr_with_const(chunk, "SET_GLOBAL", offset),
         OpCode::SetGlobalLong => long_instr_with_const(chunk, "SET_GLOBAL_LONG", offset),
+        OpCode::GetLocal => instr_with_const(chunk, "GET_LOCAL", offset),
+        OpCode::GetLocalLong => long_instr_with_const(chunk, "GET_LOCAL_LONG", offset),
+        OpCode::SetLocal => instr_with_const(chunk, "SET_LOCAL", offset),
+        OpCode::SetLocalLong => long_instr_with_const(chunk, "SET_LOCAL_LONG", offset),
+        OpCode::PopN => simple_instr("POP_N", offset),
+        OpCode::PopNLong => long_instr_with_const(chunk, "POP_N_LONG", offset),
     }
 }
 

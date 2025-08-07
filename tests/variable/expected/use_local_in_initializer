@@ -1,1 +1,2 @@
-[line 3] Use of variable 'a' in its own initializer
+[line 3] Error at 'a': Cannot use variable 'a' in its own initializer
+[line 4] Error at '}': Expected expression
