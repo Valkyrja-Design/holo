@@ -1,2 +1,4 @@
-"Derived.foo()"
-[line 10] Expected 2 arguments but got 4
+Runtime error: Incorrect number of arguments: expected 2, got 4
+[line 10] in foo()
+[line 14] in <main>
+Derived.foo()

@@ -1,1 +1,1 @@
-[line 1] 'this' must be used inside of a class
+[line 1] Error at 'this': Cannot use 'this' outside of a class

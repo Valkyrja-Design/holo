@@ -1,1 +1,2 @@
-[line 3] Expected 0 arguments but got 3
+Runtime error: Expected 0 arguments for class initializer, got 3
+[line 3] in <main>

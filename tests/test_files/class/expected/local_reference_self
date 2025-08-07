@@ -1,3 +1,2 @@
-[line 3] Error at 'returnSelf': Expected '}' after class body
-[line 5] Error at '}': Expected expression
-[line 10] Error at '}': Expected expression
+<class Foo>
+<class Foo>

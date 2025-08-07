@@ -1,2 +1,2 @@
-"Derived.bar()"
-"Base.foo()"
+Derived.bar()
+Base.foo()

@@ -1,1 +1,1 @@
-[line 2] Error at ':': Expected '{' before class body
+[line 2] Error at 'Foo': A class cannot inherit from itself

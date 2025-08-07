@@ -1,0 +1,10 @@
+class A {}
+class B {}
+
+var a = A();
+var b = B();
+
+b.in_b = "in_b";
+a.in_a = b;
+
+print a.in_a.in_b; // expect: "in_b"

@@ -1,4 +1,4 @@
-use crate::value::{Class, ClassInstance};
+use crate::value::{BoundMethod, Class, ClassInstance};
 
 use super::{
     chunk::{Chunk, OpCode},
@@ -7,7 +7,7 @@ use super::{
     value::{Closure, Function, Upvalue, Value},
 };
 use log::debug;
-use std::{io::Write, time::Instant};
+use std::io::Write;
 
 #[derive(Clone, Copy)]
 struct CallFrame {
@@ -107,7 +107,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
 
                     // Otherwise, pop off the arguments and the callee from the stack,
                     // push the return value and set the current frame to the top of the call stack
-                    self.stack.truncate(self.current_frame.stack_start - 1);
+                    self.stack.truncate(self.current_frame.stack_start);
                     self.push(ret)?;
                     self.current_frame = self.call_stack.last().unwrap().clone();
                 }
@@ -346,7 +346,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     self.push(Value::Closure(closure_ptr))?;
 
                     // Attempt to trigger a garbage collection cycle
-                    self.collect_garbage();
+                    self.attempt_gc();
 
                     // Initialize the upvalues
                     for _ in 0..upvalue_count {
@@ -405,7 +405,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     self.push(Value::Class(class))?;
 
                     // Attempt to trigger a garbage collection cycle
-                    self.collect_garbage();
+                    self.attempt_gc();
                 }
                 OpCode::GetProperty => {
                     let name = self.read_constant();
@@ -421,12 +421,12 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     let instance = instance.unwrap();
                     let field = instance.fields.get(name);
 
-                    if field.is_none() {
-                        self.runtime_error(&format!("Undefined property '{}'", name));
-                        return None;
+                    if field.is_some() {
+                        *self.stack.last_mut().unwrap() = *field.unwrap();
+                    } else {
+                        // Bind the method to the instance
+                        self.bind_method(instance.class, name)?;
                     }
-
-                    *self.stack.last_mut().unwrap() = *field.unwrap();
                 }
                 OpCode::SetProperty => {
                     let name = self.read_constant();
@@ -445,6 +445,45 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
 
                     instance.fields.insert(name.to_string(), value);
                     *self.stack.last_mut().unwrap() = value;
+                }
+                OpCode::Method => {
+                    self.define_method()?;
+                }
+                OpCode::Invoke => {
+                    self.invoke_method()?;
+                }
+                OpCode::Inherit => {
+                    let subclass = self.stack.pop().unwrap();
+                    let subclass = subclass.as_class_mut();
+                    let superclass = self.stack.last().unwrap().as_class();
+                    // Leave the subclass on the stack
+
+                    if superclass.is_none() {
+                        self.runtime_error("Superclass must be a class");
+                        return None;
+                    }
+
+                    let superclass = superclass.unwrap();
+                    let subclass = subclass.unwrap();
+
+                    // Copy all methods from the superclass to the subclass
+                    for (name, method) in superclass.methods.iter() {
+                        subclass.methods.insert(name.clone(), *method);
+                    }
+                }
+                OpCode::GetSuper => {
+                    let superclass = self.stack.pop().unwrap();
+                    let method_name = self.read_constant();
+                    let method_name = method_name
+                        .as_string()
+                        .expect("Method name must be a string");
+
+                    // `this` is at the top of the stack and will be the receiver for
+                    // the bound method
+                    self.bind_method(superclass.as_class_ptr().unwrap(), method_name)?;
+                }
+                OpCode::SuperInvoke => {
+                    self.invoke_super_method()?;
                 }
             }
         }
@@ -484,11 +523,42 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 }
                 Value::Class(class) => {
                     let instance = self.gc.alloc_class_instance_ptr(ClassInstance::new(class));
-                    self.push(Value::ClassInstance(instance))?;
+                    let len = self.stack.len();
 
+                    self.stack[len - (arg_count as usize) - 1] = Value::ClassInstance(instance);
                     // Attempt to trigger a garbage collection cycle
-                    self.collect_garbage();
+                    self.attempt_gc();
+
+                    // Find the initializer for this class if it exists
+                    let initializer = (*class).methods.get("init");
+
+                    if let Some(init) = initializer {
+                        let arity = (**init).arity();
+
+                        // Call the initializer with the instance as the receiver
+                        self.call(*init, arity, arg_count)?;
+                    } else if arg_count != 0 {
+                        self.runtime_error(
+                            format!(
+                                "Expected 0 arguments for class initializer, got {}",
+                                arg_count
+                            )
+                            .as_str(),
+                        );
+                        return None;
+                    }
+
                     Some(())
+                }
+                Value::BoundMethod(bound_method) => {
+                    let arity = (*(*bound_method).method).arity();
+                    let len = self.stack.len();
+
+                    // We reserved the first slot of the locals for the receiver. To utilize that we'll overwrite
+                    // the callee with the receiver
+                    self.stack[len - (arg_count as usize) - 1] =
+                        Value::ClassInstance((*bound_method).receiver);
+                    self.call((*bound_method).method, arity, arg_count)
                 }
                 _ => {
                     self.runtime_error("Can only call functions and classes");
@@ -513,7 +583,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         self.call_stack.push(CallFrame {
             closure,
             ip: 0,
-            stack_start: self.stack.len() - (arg_count as usize),
+            stack_start: self.stack.len() - (arg_count as usize) - 1,
         });
 
         // Set the current frame to the top of the call stack
@@ -592,6 +662,111 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         Some(())
     }
 
+    fn define_method(&mut self) -> Option<()> {
+        let method_name = self.read_constant();
+        let method_name = method_name
+            .as_string()
+            .expect("Method name must be a string");
+
+        // The method's closure is at the top of the stack with the parent class right below it
+        let method_closure = self
+            .stack
+            .pop()
+            .unwrap()
+            .as_closure_ptr()
+            .expect("Expected a closure object");
+
+        let class = self
+            .stack
+            .last()
+            .unwrap()
+            .as_class_mut()
+            .expect("Expected a class object to define a method on");
+
+        // Add the method to the class
+        class
+            .methods
+            .insert(method_name.to_string(), method_closure);
+
+        Some(())
+    }
+
+    fn invoke_method(&mut self) -> Option<()> {
+        let method_name = self.read_constant();
+        let method_name = method_name
+            .as_string()
+            .expect("Method name must be a string");
+        let arg_count = self.read_int8() as u8;
+        let len = self.stack.len();
+        let instance = self.stack[len - (arg_count as usize) - 1].as_class_instance_ptr();
+
+        if let Some(instance) = instance {
+            // First check if this is a field access
+            let field = unsafe { (*instance).fields.get(method_name) };
+
+            if let Some(field) = field {
+                self.stack[len - (arg_count as usize) - 1] = *field;
+                return self.call_value(arg_count);
+            }
+
+            return self.invoke_from_class(unsafe { (*instance).class }, method_name, arg_count);
+        }
+
+        self.runtime_error("Can only call methods on class instances");
+        None
+    }
+
+    fn invoke_super_method(&mut self) -> Option<()> {
+        let method_name = self.read_constant();
+        let method_name = method_name
+            .as_string()
+            .expect("Method name must be a string");
+        let arg_count = self.read_int8() as u8;
+        let superclass = self.stack.pop().unwrap().as_class_ptr().unwrap();
+
+        self.invoke_from_class(superclass, method_name, arg_count)
+    }
+
+    fn invoke_from_class(
+        &mut self,
+        class: *mut Class,
+        method_name: &str,
+        arg_count: u8,
+    ) -> Option<()> {
+        unsafe {
+            // SAFETY: GC guarantees that all pointers are valid
+            let method = (*class).methods.get(method_name);
+
+            if let Some(method) = method {
+                return self.call(*method, (**method).arity(), arg_count);
+            }
+
+            self.runtime_error(&format!("Undefined method '{}'", method_name));
+            None
+        }
+    }
+
+    fn bind_method(&mut self, class: *mut Class, method_name: &str) -> Option<()> {
+        let method = unsafe { (*class).methods.get(method_name) };
+
+        if method.is_none() {
+            self.runtime_error(&format!("Undefined property '{}'", method_name));
+            return None;
+        }
+
+        // Bind the method to the instance
+        let bound_method = self.gc.alloc_bound_method(BoundMethod::new(
+            self.stack.last().unwrap().as_class_instance_ptr().unwrap(),
+            *method.unwrap(),
+        ));
+
+        *self.stack.last_mut().unwrap() = bound_method;
+
+        // Attempt to trigger a garbage collection cycle
+        self.attempt_gc();
+        Some(())
+    }
+
     fn binary_number_op<F>(&mut self, op: F, err: &str) -> Option<()>
     where
         F: FnOnce(&mut f64, f64),
@@ -663,7 +838,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     .intern_owned(concatenated_str, &mut self.gc);
 
                 // Attempt to trigger a garbage collection cycle
-                self.collect_garbage();
+                self.attempt_gc();
 
                 Some(())
             },
@@ -720,7 +895,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 );
 
                 // Attempt to trigger a garbage collection cycle
-                self.collect_garbage();
+                self.attempt_gc();
 
                 upvalue
             }

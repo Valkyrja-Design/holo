@@ -1,4 +1,4 @@
-use super::{gc::GC, value::Value};
+use super::gc::GC;
 use std::{collections::HashMap, fmt::Debug};
 use std::{
     hash::{Hash, Hasher},
@@ -12,16 +12,12 @@ struct StrKey(NonNull<str>);
 
 impl Hash for StrKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        // SAFETY: the pointer must refer to a valid and live `str`.
-        // That's the responsibility of the GC
         unsafe { self.0.as_ref().hash(state) }
     }
 }
 
 impl PartialEq for StrKey {
     fn eq(&self, other: &Self) -> bool {
-        // SAFETY: the pointer must refer to a valid and live `str`.
-        // That's the responsibility of the GC
         unsafe { self.0.as_ref() == other.0.as_ref() }
     }
 }
@@ -87,5 +83,34 @@ impl Debug for StringInternTable {
         }
 
         dbg.finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_str_intern_table() {
+        let mut gc = GC::new();
+        let mut table = StringInternTable::new();
+
+        let s1 = table.intern_slice("hello", &mut gc);
+        let s2 = table.intern_slice("hello", &mut gc);
+        let s3 = table.intern_slice("world", &mut gc);
+
+        assert_eq!(s1, s2);
+        assert_ne!(s1, s3);
+
+        let s4 = table.intern_owned("hello".to_string(), &mut gc);
+        let s5 = table.intern_owned("hello".to_string(), &mut gc);
+        let s6 = table.intern_owned("world".to_string(), &mut gc);
+
+        assert_eq!(s4, s5);
+        assert_ne!(s4, s6);
+
+        assert_eq!(table.0.len(), 2);
+        assert!(table.0.contains_key(&StrKey(NonNull::from("hello"))));
+        assert!(table.0.contains_key(&StrKey(NonNull::from("world"))));
     }
 }

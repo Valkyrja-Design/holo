@@ -6,4 +6,4 @@ class Foo {
 
 var bar = Foo().bar;
 print "got method"; // expect: got method
-bar("arg");          // expect: arg
+bar("arg");         // expect: arg

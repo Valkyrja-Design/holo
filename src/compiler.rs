@@ -111,6 +111,11 @@ struct CompilerContext<'a> {
     curr_depth: usize,
     locals: Vec<Local<'a>>,
     upvalues: Vec<Upvalue>,
+    is_initializer: bool,
+}
+
+struct ClassContext {
+    has_superclass: bool,
 }
 
 pub struct Compiler<'a, 'b, W: Write> {
@@ -124,9 +129,11 @@ pub struct Compiler<'a, 'b, W: Write> {
     curr_depth: usize,
     loop_contexts: Vec<LoopContext>,
     upvalues: Vec<Upvalue>,
+    is_initializer: bool,
 
     // Saved contexts for nested functions
     contexts: Vec<CompilerContext<'a>>,
+    class_contexts: Vec<ClassContext>,
 
     // Shared state
     gc: &'b mut GC,
@@ -344,12 +351,12 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             precedence: Precedence::None,
         }, // Return
         ParseRule {
-            prefix_rule: None,
+            prefix_rule: Some(Self::super_),
             infix_rule: None,
             precedence: Precedence::None,
         }, // Super
         ParseRule {
-            prefix_rule: None,
+            prefix_rule: Some(Self::this),
             infix_rule: None,
             precedence: Precedence::None,
         }, // This
@@ -420,8 +427,10 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             curr_depth: 0,
             loop_contexts: Vec::new(),
             upvalues: Vec::new(),
+            is_initializer: false,
             had_error: false,
             contexts: Vec::new(),
+            class_contexts: Vec::new(),
             gc,
             str_intern_table,
             sym_table,
@@ -515,30 +524,15 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         };
 
         // Save the current context
-        self.push_context(name);
+        self.push_context(name, false);
+        self.begin_scope();
+
+        // Reserve a slot for the function itself
+        let func_index = self.declare_local("")?;
+        self.mark_as_initialized(func_index);
 
         // Compile the function body
         self.function()?;
-
-        // Restore the previous context
-        let upvalues = std::mem::replace(&mut self.upvalues, Vec::new());
-        let mut function = self.pop_context();
-
-        // Fill in the upvalue count
-        function.upvalue_count = upvalues.len();
-
-        // Allocate the function value
-        let func_value = self.gc.alloc_function(function);
-
-        // Emit a `Closure` instruction to wrap the function at runtime
-        self.emit_opcode_with_constant_long(OpCode::Closure, OpCode::ClosureLong, func_value)?;
-
-        // Emit the upvalues
-        for upvalue in upvalues {
-            self.emit_byte(if upvalue.is_local { 1 } else { 0 });
-            // FIXME: `upvalue.index` can be bigger than `u8::MAX`
-            self.emit_byte(upvalue.index as u8);
-        }
 
         // Define it as a variable
         if self.curr_depth > 0 {
@@ -556,10 +550,10 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     }
 
     /// Compiles a function signature and body, assumes the `fun` keyword has been consumed
+    /// and a new scope has been created. The caller does not have to explicitly end the scope
+    /// because this function will pop the new function's compilation context anyway
     fn function(&mut self) -> Result<'a, ()> {
         const MAX_PARAMS: u8 = 255;
-
-        self.begin_scope();
 
         // Compile the parameter list
         self.consume(TokenKind::LeftParen, "Expected '(' after function name")?;
@@ -601,7 +595,28 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.block()?;
 
         // Implicit return
-        self.emit_return();
+        self.emit_return()?;
+
+        // Restore the previous context
+        let upvalues = std::mem::replace(&mut self.upvalues, Vec::new());
+        let mut function = self.pop_context();
+
+        // Fill in the upvalue count
+        function.upvalue_count = upvalues.len();
+
+        // Allocate the function value
+        let func_value = self.gc.alloc_function(function);
+
+        // Emit a `Closure` instruction to wrap the function at runtime
+        self.emit_opcode_with_constant_long(OpCode::Closure, OpCode::ClosureLong, func_value)?;
+
+        // Emit the upvalues
+        for upvalue in upvalues {
+            self.emit_byte(if upvalue.is_local { 1 } else { 0 });
+            // FIXME: `upvalue.index` can be bigger than `u8::MAX`
+            self.emit_byte(upvalue.index as u8);
+        }
+
         Ok(())
     }
 
@@ -610,14 +625,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.consume(TokenKind::Identifier, "Expected class name")?;
 
         let class_name = self.prev_token.lexeme;
-
-        let index = if self.curr_depth > 0 {
-            let index = self.declare_local(class_name)?;
-            self.mark_as_initialized(index);
-            index
-        } else {
-            self.sym_table.declare(class_name)
-        };
+        let index = self.declare_variable(class_name)?;
 
         // FIXME: Add support for u24 constants
         // Emit the `Class` instruction
@@ -635,11 +643,88 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             )?;
         }
 
-        // Compile the class body (empty for now)
+        self.class_contexts.push(ClassContext {
+            has_superclass: false,
+        });
+
+        // Compile the superclass, if any
+        if self.check(TokenKind::Colon) {
+            self.advance()?;
+            self.consume(TokenKind::Identifier, "Expected superclass name after ':'")?;
+
+            if self.prev_token.lexeme == class_name {
+                return Err(CompileError::new(
+                    self.prev_token.clone(),
+                    "A class cannot inherit from itself".to_string(),
+                ));
+            }
+
+            // Load the superclass
+            self.resolve_variable(self.prev_token.lexeme)?;
+            self.class_contexts.last_mut().unwrap().has_superclass = true;
+
+            // Declare a variable for the superclass
+            self.begin_scope();
+            let index = self.declare_local("super")?;
+            self.mark_as_initialized(index);
+
+            // Load the current class. We must declare the superclass variable
+            // before loading the current class because the methods expect the
+            // current class to be at the top of the stack
+            self.resolve_variable(class_name)?;
+
+            // The superclass is at the top of the stack with the class variable below it
+            self.emit_opcode(OpCode::Inherit);
+        }
+
+        // Push the class variable back onto the stack, so that the methods and the
+        // `OpCode::Inherit` can access it
+        self.resolve_variable(class_name)?;
+
+        // Compile the class body
         self.consume(TokenKind::LeftBrace, "Expected '{' before class body")?;
+
+        // Compile the method declarations
+        while !self.check(TokenKind::RightBrace) && !self.check(TokenKind::Eof) {
+            self.method_declaration()?;
+        }
+
         self.consume(TokenKind::RightBrace, "Expected '}' after class body")?;
 
+        // Pop the class variable
+        self.emit_opcode(OpCode::Pop);
+
+        // End the class scope if the superclass was present
+        if self.class_contexts.last().unwrap().has_superclass {
+            self.end_scope();
+        }
+
+        self.class_contexts.pop();
         Ok(())
+    }
+
+    /// Compiles a method declaration
+    fn method_declaration(&mut self) -> Result<'a, ()> {
+        // Method declarations don't begin with `fun` keyword
+        self.consume(TokenKind::Identifier, "Expected method name")?;
+
+        let method_name = self.prev_token.lexeme;
+        let method_name_ptr = self.str_intern_table.intern_slice(method_name, self.gc);
+
+        // Save the current context
+        self.push_context(method_name, method_name == "init");
+        self.begin_scope();
+
+        // Reserver a slot for the `this` variable
+        let this_index = self.declare_local("this")?;
+        self.mark_as_initialized(this_index);
+
+        // Compile the function body
+        self.function()?;
+
+        // At this point the method's closure is on the stack with the
+        // parent class directly below it
+        self.emit_opcode_with_constant(OpCode::Method, Value::String(method_name_ptr))
     }
 
     fn statement(&mut self) -> Result<'a, ()> {
@@ -848,8 +933,15 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
 
         if self.check(TokenKind::Semicolon) {
-            self.emit_opcode(OpCode::Nil);
+            // Implicitly return `this` in initializers and `nil` otherwise
+            self.emit_return()?;
         } else {
+            if self.is_initializer {
+                return Err(CompileError::new(
+                    self.prev_token.clone(),
+                    "Cannot return a value from an initializer".to_string(),
+                ));
+            }
             self.expression()?;
         }
 
@@ -1202,8 +1294,66 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             self.advance()?;
             self.expression()?;
             self.emit_opcode_with_constant(OpCode::SetProperty, Value::String(name_ptr))
+        } else if self.check(TokenKind::LeftParen) {
+            // Immediate method invocation
+            self.advance()?;
+
+            let arg_count = self.argument_list()?;
+            self.emit_opcode_with_constant(OpCode::Invoke, Value::String(name_ptr))?;
+            self.emit_byte(arg_count);
+            Ok(())
         } else {
             self.emit_opcode_with_constant(OpCode::GetProperty, Value::String(name_ptr))
+        }
+    }
+
+    fn this(&mut self, _: bool) -> Result<'a, ()> {
+        if self.class_contexts.is_empty() {
+            return Err(CompileError::new(
+                self.prev_token.clone(),
+                "Cannot use 'this' outside of a class".to_string(),
+            ));
+        }
+
+        self.variable(false)
+    }
+
+    fn super_(&mut self, _: bool) -> Result<'a, ()> {
+        if self.class_contexts.is_empty() {
+            return Err(CompileError::new(
+                self.prev_token.clone(),
+                "Cannot use 'super' outside of a class".to_string(),
+            ));
+        }
+
+        if !self.class_contexts.last().unwrap().has_superclass {
+            return Err(CompileError::new(
+                self.prev_token.clone(),
+                "Cannot use 'super' in a class with no superclass".to_string(),
+            ));
+        }
+
+        self.consume(TokenKind::Dot, "Expected '.' after 'super'")?;
+        self.consume(TokenKind::Identifier, "Expected superclass method name")?;
+
+        let name = self.prev_token.lexeme;
+        let name_ptr = self.str_intern_table.intern_slice(name, self.gc);
+
+        // Load `this` and `super`
+        self.resolve_variable("this")?;
+
+        if self.check(TokenKind::LeftParen) {
+            // Immediate method invocation
+            self.advance()?;
+
+            let arg_count = self.argument_list()?;
+            self.resolve_variable("super")?;
+            self.emit_opcode_with_constant(OpCode::SuperInvoke, Value::String(name_ptr))?;
+            self.emit_byte(arg_count);
+            return Ok(());
+        } else {
+            self.resolve_variable("super")?;
+            self.emit_opcode_with_constant(OpCode::GetSuper, Value::String(name_ptr))
         }
     }
 
@@ -1302,7 +1452,8 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     }
 
     fn finish(mut self) -> Option<Function> {
-        self.emit_return();
+        // `emit_return` will emit a `nil` since `finish` is only called from the global scope
+        let _err = self.emit_return();
 
         if !self.had_error {
             Some(self.function)
@@ -1330,6 +1481,22 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             .push(Local::new(name, self.curr_depth, false, false));
 
         Ok(self.locals.len() - 1)
+    }
+
+    /// Declares a variable with the given name in the current scope. This will also mark the local
+    /// variable as initialized
+    fn declare_variable(&mut self, name: &'a str) -> Result<'a, usize> {
+        let index = if self.curr_depth == 0 {
+            // Global variable
+            self.sym_table.declare(name)
+        } else {
+            // Local variable
+            let index = self.declare_local(name)?;
+            self.mark_as_initialized(index);
+            index
+        };
+
+        Ok(index)
     }
 
     /// Mark the local as being initialized
@@ -1421,6 +1588,42 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
     }
 
+    /// Resolves the given variable
+    fn resolve_variable(&mut self, name: &'a str) -> Result<'a, ()> {
+        let index = Self::resolve_local(&self.locals, name);
+
+        // Pick local or global ops and final index
+        let (get_op, get_op_long, idx) = if index != -1 {
+            if !self.locals[index as usize].initialized {
+                return Err(CompileError::new(
+                    self.prev_token.to_owned(),
+                    format!("Cannot use variable '{}' in its own initializer", name),
+                ));
+            }
+
+            (OpCode::GetLocal, OpCode::GetLocalLong, index as usize)
+        } else {
+            let index = self.resolve_upvalue(name);
+
+            if index != -1 {
+                (OpCode::GetUpvalue, OpCode::GetUpvalueLong, index as usize)
+            } else {
+                (
+                    OpCode::GetGlobal,
+                    OpCode::GetGlobalLong,
+                    self.sym_table.resolve(name),
+                )
+            }
+        };
+
+        self.emit_opcode_with_num(
+            get_op,
+            get_op_long,
+            idx,
+            "Too many globals in the program".to_string(),
+        )
+    }
+
     /// Adds the a new upvalue to the current function
     fn add_upvalue(dest: &mut Vec<Upvalue>, is_local: bool, index: usize) -> usize {
         // Check if the upvalue already exists
@@ -1507,8 +1710,8 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.loop_contexts.last()
     }
 
-    /// Prepares a new compilation context for the function `func_name`
-    fn push_context(&mut self, func_name: &str) {
+    /// Saves the current compilation context and sets up a new one for the given function
+    fn push_context(&mut self, func_name: &str, is_initializer: bool) {
         // Save current context
         let saved_context = CompilerContext {
             function: std::mem::replace(
@@ -1524,6 +1727,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             curr_depth: std::mem::replace(&mut self.curr_depth, 0),
             loop_contexts: std::mem::replace(&mut self.loop_contexts, Vec::new()),
             upvalues: std::mem::replace(&mut self.upvalues, Vec::new()),
+            is_initializer: std::mem::replace(&mut self.is_initializer, is_initializer),
         };
 
         self.contexts.push(saved_context);
@@ -1549,6 +1753,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.curr_depth = saved_context.curr_depth;
         self.loop_contexts = saved_context.loop_contexts;
         self.upvalues = saved_context.upvalues;
+        self.is_initializer = saved_context.is_initializer;
 
         compiled_function
     }
@@ -1569,9 +1774,21 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.chunk().write_opcode(opcode, line);
     }
 
-    fn emit_return(&mut self) {
-        self.emit_opcode(OpCode::Nil);
+    fn emit_return(&mut self) -> Result<'a, ()> {
+        // Implicitly return `this` in initializers and `nil` otherwise
+        if self.is_initializer {
+            self.emit_opcode_with_num(
+                OpCode::GetLocal,
+                OpCode::GetLocalLong,
+                0,
+                "Too many locals in the program".to_string(),
+            )?;
+        } else {
+            self.emit_opcode(OpCode::Nil);
+        }
+
         self.emit_opcode(OpCode::Return);
+        Ok(())
     }
 
     fn emit_opcode_with_num(

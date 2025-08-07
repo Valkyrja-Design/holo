@@ -64,6 +64,11 @@ pub fn disassemble_instr(chunk: &Chunk, offset: usize) -> usize {
         OpCode::Class => instr_with_const8(chunk, "CLASS", offset),
         OpCode::GetProperty => instr_with_const8(chunk, "GET_PROPERTY", offset),
         OpCode::SetProperty => instr_with_const8(chunk, "SET_PROPERTY", offset),
+        OpCode::Method => instr_with_const8(chunk, "METHOD", offset),
+        OpCode::Invoke => invoke_instr(chunk, "INVOKE", offset),
+        OpCode::Inherit => simple_instr("INHERIT", offset),
+        OpCode::GetSuper => instr_with_const8(chunk, "GET_SUPER", offset),
+        OpCode::SuperInvoke => invoke_instr(chunk, "SUPER_INVOKE", offset),
     }
 }
 
@@ -101,7 +106,7 @@ fn unary_instr16(chunk: &Chunk, name: &str, offset: usize) -> usize {
 }
 
 fn unary_instr24(chunk: &Chunk, name: &str, offset: usize) -> usize {
-    let op: usize = Chunk::read_as_16bit_int(&chunk.code[offset + 1..offset + 4]);
+    let op: usize = Chunk::read_as_24bit_int(&chunk.code[offset + 1..offset + 4]);
 
     println!("{} {}", name, op);
     offset + 4
@@ -157,6 +162,17 @@ fn closure_instr_long(chunk: &Chunk, mut offset: usize) -> usize {
     }
 
     offset
+}
+
+fn invoke_instr(chunk: &Chunk, name: &str, offset: usize) -> usize {
+    let name_index = chunk.code[offset + 1];
+    let arg_count = chunk.code[offset + 2];
+
+    println!(
+        "{} {} {}",
+        name, chunk.constants[name_index as usize], arg_count
+    );
+    offset + 3
 }
 
 #[cfg(test)]

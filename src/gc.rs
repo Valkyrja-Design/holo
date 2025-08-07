@@ -1,9 +1,10 @@
+use crate::value::BoundMethod;
+
 use super::native::NativeFunc;
 use super::sizeof::Sizeof;
 use super::value::{Class, ClassInstance, Closure, Function, Upvalue, Value};
 use log::debug;
 use std::collections::HashSet;
-use std::ptr;
 
 static GC_DEFAULT_THRESHOLD: usize = 1024 * 1024; // 1 MB
 static GC_THRESHOLD_GROWTH_FACTOR: f64 = 2.0;
@@ -20,6 +21,7 @@ pub struct GC {
     upvalues: Vec<*mut Upvalue>,
     classes: Vec<*mut Class>,
     class_instances: Vec<*mut ClassInstance>,
+    bound_methods: Vec<*mut BoundMethod>,
 
     // "black" GC pointers that have had their references traced
     marked_strings: HashSet<*mut String>,
@@ -29,12 +31,15 @@ pub struct GC {
     marked_upvalues: HashSet<*mut Upvalue>,
     marked_classes: HashSet<*mut Class>,
     marked_class_instances: HashSet<*mut ClassInstance>,
+    marked_bound_methods: HashSet<*mut BoundMethod>,
 
     // Currently "gray" GC pointers that have not had their references traced
     worklist_functions: Vec<*mut Function>,
     worklist_closures: Vec<*mut Closure>,
     worklist_upvalues: Vec<*mut Upvalue>,
+    worklist_classes: Vec<*mut Class>,
     worklist_class_instances: Vec<*mut ClassInstance>,
+    worklist_bound_methods: Vec<*mut BoundMethod>,
 }
 
 impl GC {
@@ -49,6 +54,7 @@ impl GC {
             upvalues: Vec::new(),
             classes: Vec::new(),
             class_instances: Vec::new(),
+            bound_methods: Vec::new(),
             marked_strings: HashSet::new(),
             marked_functions: HashSet::new(),
             marked_closures: HashSet::new(),
@@ -56,10 +62,13 @@ impl GC {
             marked_upvalues: HashSet::new(),
             marked_classes: HashSet::new(),
             marked_class_instances: HashSet::new(),
+            marked_bound_methods: HashSet::new(),
             worklist_functions: Vec::new(),
             worklist_closures: Vec::new(),
             worklist_upvalues: Vec::new(),
+            worklist_classes: Vec::new(),
             worklist_class_instances: Vec::new(),
+            worklist_bound_methods: Vec::new(),
         }
     }
 
@@ -137,6 +146,20 @@ impl GC {
         Value::ClassInstance(ptr)
     }
 
+    pub fn alloc_bound_method(&mut self, b: BoundMethod) -> Value {
+        self.bytes_allocated += b.sizeof();
+
+        let ptr = Box::into_raw(Box::new(b));
+        debug!(
+            "Allocating bound method {:?} at {:?}",
+            unsafe { &*ptr },
+            ptr
+        );
+
+        self.bound_methods.push(ptr);
+        Value::BoundMethod(ptr)
+    }
+
     // Raw pointer allocation methods for cases needing direct pointers
     pub fn alloc_string_ptr(&mut self, s: String) -> *mut String {
         self.bytes_allocated += s.sizeof();
@@ -212,6 +235,20 @@ impl GC {
         ptr
     }
 
+    pub fn alloc_bound_method_ptr(&mut self, b: BoundMethod) -> *mut BoundMethod {
+        self.bytes_allocated += b.sizeof();
+
+        let ptr = Box::into_raw(Box::new(b));
+        debug!(
+            "Allocating bound method {:?} at {:?}",
+            unsafe { &*ptr },
+            ptr
+        );
+
+        self.bound_methods.push(ptr);
+        ptr
+    }
+
     /// Marks a value as reachable
     pub fn mark_value(&mut self, v: Value) {
         match v {
@@ -246,6 +283,12 @@ impl GC {
                     return;
                 }
                 self.mark_class_instance(ptr)
+            }
+            Value::BoundMethod(ptr) => {
+                if self.marked_bound_methods.contains(&ptr) {
+                    return;
+                }
+                self.mark_bound_method(ptr)
             }
             Value::Nil | Value::Bool(_) | Value::Number(_) => {}
         }
@@ -292,6 +335,7 @@ impl GC {
     pub fn mark_class(&mut self, ptr: *mut Class) {
         debug!("Marking class {:?} at {:?}", unsafe { &*ptr }, ptr);
         self.marked_classes.insert(ptr);
+        self.worklist_classes.push(ptr);
     }
 
     /// Marks a class instance pointer as reachable
@@ -301,13 +345,22 @@ impl GC {
         self.worklist_class_instances.push(ptr);
     }
 
+    /// Marks a bound method pointer as reachable
+    pub fn mark_bound_method(&mut self, ptr: *mut BoundMethod) {
+        debug!("Marking bound method {:?} at {:?}", unsafe { &*ptr }, ptr);
+        self.marked_bound_methods.insert(ptr);
+        self.worklist_bound_methods.push(ptr);
+    }
+
     /// Traces all values that are reachable from the roots
     pub fn trace_references(&mut self) {
         // FIXME: Not very efficient, but works for now
         while !self.worklist_closures.is_empty()
             || !self.worklist_functions.is_empty()
             || !self.worklist_upvalues.is_empty()
+            || !self.worklist_classes.is_empty()
             || !self.worklist_class_instances.is_empty()
+            || !self.worklist_bound_methods.is_empty()
         {
             while let Some(ptr) = self.worklist_functions.pop() {
                 // Mark the constants in the function's chunk
@@ -342,13 +395,39 @@ impl GC {
                 }
             }
 
+            while let Some(ptr) = self.worklist_classes.pop() {
+                // Mark the methods
+                unsafe {
+                    for (_k, v) in &(*ptr).methods {
+                        if !self.marked_closures.contains(v) {
+                            self.mark_closure(*v);
+                        }
+                    }
+                }
+            }
+
             while let Some(ptr) = self.worklist_class_instances.pop() {
                 // Mark the parent class and all fields
                 unsafe {
-                    self.mark_class((*ptr).class);
+                    if !self.marked_classes.contains(&(*ptr).class) {
+                        self.mark_class((*ptr).class);
+                    }
 
                     for (_k, v) in &(*ptr).fields {
                         self.mark_value(*v);
+                    }
+                }
+            }
+
+            while let Some(ptr) = self.worklist_bound_methods.pop() {
+                // Mark the receiver and the method
+                unsafe {
+                    if !self.marked_class_instances.contains(&(*ptr).receiver) {
+                        self.mark_class_instance((*ptr).receiver);
+                    }
+
+                    if !self.marked_closures.contains(&(*ptr).method) {
+                        self.mark_closure((*ptr).method);
                     }
                 }
             }
@@ -362,6 +441,9 @@ impl GC {
         self.marked_closures.clear();
         self.marked_natives.clear();
         self.marked_upvalues.clear();
+        self.marked_classes.clear();
+        self.marked_class_instances.clear();
+        self.marked_bound_methods.clear();
     }
 
     /// Frees all unmarked pointers
@@ -466,6 +548,20 @@ impl GC {
             }
         });
 
+        self.bound_methods.retain(|&ptr| {
+            if self.marked_bound_methods.contains(&ptr) {
+                true
+            } else {
+                debug!("Freeing bound method at {:?}", ptr);
+
+                self.bytes_allocated -= unsafe { &*ptr }.sizeof();
+                unsafe {
+                    let _ = Box::from_raw(ptr);
+                }
+                false
+            }
+        });
+
         // Set the next GC threshold
         self.next_gc = (self.bytes_allocated as f64 * GC_THRESHOLD_GROWTH_FACTOR) as usize;
 
@@ -492,6 +588,13 @@ impl Drop for GC {
     fn drop(&mut self) {
         // Convert raw pointers back to Box to properly drop them. The GC
         // should be the only owner of these pointers, so this is safe
+        for &ptr in &self.bound_methods {
+            debug!("Freeing bound method at {:?}", ptr);
+            unsafe {
+                let _ = Box::from_raw(ptr);
+            }
+        }
+
         for &ptr in &self.class_instances {
             debug!("Freeing class instance at {:?}", ptr);
             unsafe {

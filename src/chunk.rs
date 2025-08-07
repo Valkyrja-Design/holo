@@ -50,6 +50,11 @@ pub enum OpCode {
     Class,
     GetProperty,
     SetProperty,
+    Method,
+    Invoke,
+    Inherit,
+    GetSuper,
+    SuperInvoke,
 }
 
 impl From<u8> for OpCode {
@@ -103,6 +108,11 @@ impl From<u8> for OpCode {
             45 => Self::Class,
             46 => Self::GetProperty,
             47 => Self::SetProperty,
+            48 => Self::Method,
+            49 => Self::Invoke,
+            50 => Self::Inherit,
+            51 => Self::GetSuper,
+            52 => Self::SuperInvoke,
             _ => unreachable!("invalid opcode!"),
         }
     }
@@ -159,6 +169,11 @@ impl From<OpCode> for u8 {
             OpCode::Class => 45,
             OpCode::GetProperty => 46,
             OpCode::SetProperty => 47,
+            OpCode::Method => 48,
+            OpCode::Invoke => 49,
+            OpCode::Inherit => 50,
+            OpCode::GetSuper => 51,
+            OpCode::SuperInvoke => 52,
         }
     }
 }

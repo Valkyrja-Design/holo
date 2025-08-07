@@ -353,7 +353,6 @@ impl<'a> Scanner<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
     use std::path::PathBuf;
 
     #[test]
@@ -398,11 +397,6 @@ mod tests {
             let normalized_output = format!("{tokens:#?}\n").trim().replace("\r\n", "\n");
 
             assert_eq!(normalized_output, normalized_expected);
-
-            // // write output to file
-            // let mut expected_file = std::fs::File::create(expected_file).unwrap();
-
-            // expected_file.write(format!("{tokens:#?}\n").as_bytes());
         }
     }
 }

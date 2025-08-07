@@ -1,1 +1,2 @@
-[line 5] Error at ';': Expected superclassmethod name after '.'
+[line 5] Error at ';': Expected superclass method name
+[line 6] Error at '}': Expected expression

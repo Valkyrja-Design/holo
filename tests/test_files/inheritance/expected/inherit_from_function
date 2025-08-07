@@ -1,1 +1,2 @@
-[line 3] Superclass must be a class
+Runtime error: Superclass must be a class
+[line 3] in <main>

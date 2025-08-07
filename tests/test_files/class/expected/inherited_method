@@ -1,4 +1,3 @@
-[line 2] Error at 'inFoo': Expected '}' after class body
-[line 4] Error at '}': Expected expression
-[line 10] Error at '}': Expected expression
-[line 16] Error at '}': Expected expression
+in foo
+in bar
+in baz

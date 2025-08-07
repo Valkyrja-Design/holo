@@ -1,1 +1,2 @@
-[line 3] 'super' must be used inside of a class with a superclass
+[line 3] Error at 'super': Cannot use 'super' in a class with no superclass
+[line 4] Error at '}': Expected expression

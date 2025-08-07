@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::chunk::Chunk;
 use crate::native::NativeFunc;
-use crate::value::{Class, ClassInstance, Closure, Function, Upvalue, Value};
+use crate::value::{BoundMethod, Class, ClassInstance, Closure, Function, Upvalue, Value};
 
 pub trait Sizeof {
     // Returns the estimated size of the object in bytes
@@ -85,5 +85,11 @@ where
 impl Sizeof for ClassInstance {
     fn sizeof(&self) -> usize {
         std::mem::size_of::<*mut Class>() + self.fields.sizeof()
+    }
+}
+
+impl Sizeof for BoundMethod {
+    fn sizeof(&self) -> usize {
+        std::mem::size_of::<*mut ClassInstance>() + std::mem::size_of::<*mut Closure>()
     }
 }

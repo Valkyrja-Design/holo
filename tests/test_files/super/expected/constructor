@@ -1,2 +1,2 @@
-"Derived.init()"
-"Base.init(a, b)"
+Derived.init()
+Base.init(a, b)

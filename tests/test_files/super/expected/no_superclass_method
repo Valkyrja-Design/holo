@@ -1,1 +1,3 @@
-[line 5] Undefined property 'doesNotExist'
+Runtime error: Undefined method 'doesNotExist'
+[line 5] in foo()
+[line 9] in <main>

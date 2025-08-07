@@ -1,1 +1,2 @@
-[line 3] Undefined property 'unknown'
+Runtime error: Undefined method 'unknown'
+[line 3] in <main>

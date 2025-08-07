@@ -60,11 +60,15 @@ impl Closure {
 #[derive(Debug)]
 pub struct Class {
     pub name: String,
+    pub methods: HashMap<String, *mut Closure>,
 }
 
 impl Class {
     pub fn new(name: String) -> Self {
-        Self { name }
+        Self {
+            name,
+            methods: HashMap::new(),
+        }
     }
 }
 
@@ -88,6 +92,18 @@ impl ClassInstance {
     }
 }
 
+#[derive(Debug)]
+pub struct BoundMethod {
+    pub receiver: *mut ClassInstance,
+    pub method: *mut Closure,
+}
+
+impl BoundMethod {
+    pub fn new(receiver: *mut ClassInstance, method: *mut Closure) -> Self {
+        Self { receiver, method }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub enum Value {
     Nil,
@@ -100,6 +116,7 @@ pub enum Value {
     Upvalue(*mut Upvalue),
     Class(*mut Class),
     ClassInstance(*mut ClassInstance),
+    BoundMethod(*mut BoundMethod),
 }
 
 impl Value {
@@ -132,6 +149,13 @@ impl Value {
         }
     }
 
+    pub fn as_closure_ptr(&self) -> Option<*mut Closure> {
+        match self {
+            Self::Closure(ptr) => Some(*ptr),
+            _ => None,
+        }
+    }
+
     pub fn as_native_func(&self) -> Option<&NativeFunc> {
         match self {
             Self::NativeFunc(ptr) => unsafe { Some(&**ptr) },
@@ -153,6 +177,20 @@ impl Value {
         }
     }
 
+    pub fn as_class_mut(&self) -> Option<&mut Class> {
+        match self {
+            Self::Class(ptr) => unsafe { Some(&mut **ptr) },
+            _ => None,
+        }
+    }
+
+    pub fn as_class_ptr(&self) -> Option<*mut Class> {
+        match self {
+            Self::Class(ptr) => Some(*ptr),
+            _ => None,
+        }
+    }
+
     pub fn as_class_instance(&self) -> Option<&ClassInstance> {
         match self {
             Self::ClassInstance(ptr) => unsafe { Some(&**ptr) },
@@ -163,6 +201,20 @@ impl Value {
     pub fn as_class_instance_mut(&self) -> Option<&mut ClassInstance> {
         match self {
             Self::ClassInstance(ptr) => unsafe { Some(&mut **ptr) },
+            _ => None,
+        }
+    }
+
+    pub fn as_class_instance_ptr(&self) -> Option<*mut ClassInstance> {
+        match self {
+            Self::ClassInstance(ptr) => Some(*ptr),
+            _ => None,
+        }
+    }
+
+    pub fn as_bound_method(&self) -> Option<&BoundMethod> {
+        match self {
+            Self::BoundMethod(ptr) => unsafe { Some(&**ptr) },
             _ => None,
         }
     }
@@ -197,6 +249,9 @@ impl Debug for Value {
                 Self::ClassInstance(ptr) => {
                     write!(f, "<instance of {}>", (*(**ptr).class).name)
                 }
+                Self::BoundMethod(ptr) => {
+                    write!(f, "<fn {}>", (*(**ptr).method).name())
+                }
             }
         }
     }
@@ -230,6 +285,9 @@ impl std::fmt::Display for Value {
                 }
                 Self::ClassInstance(ptr) => {
                     write!(f, "<instance of {}>", (*(**ptr).class).name)
+                }
+                Self::BoundMethod(ptr) => {
+                    write!(f, "<fn {}>", (*(**ptr).method).name())
                 }
             }
         }
