@@ -3,13 +3,14 @@ use super::value;
 #[derive(Clone, Copy)]
 pub enum OpCode {
     Constant,
-    ConstantLong,
+    ConstantLong, // stores index as 24 bit integer
     Return,
     Negate,
     Add,
     Sub,
     Mult,
     Divide,
+    Ternary,
 }
 
 impl From<u8> for OpCode {
@@ -23,6 +24,7 @@ impl From<u8> for OpCode {
             5 => OpCode::Sub,
             6 => OpCode::Mult,
             7 => OpCode::Divide,
+            8 => OpCode::Ternary,
             _ => panic!("invalid opcode!"),
         }
     }
@@ -39,6 +41,7 @@ impl From<OpCode> for u8 {
             OpCode::Sub => 5,
             OpCode::Mult => 6,
             OpCode::Divide => 7,
+            OpCode::Ternary => 8,
         }
     }
 }

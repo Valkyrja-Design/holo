@@ -89,6 +89,21 @@ impl<'a> VM<'a> {
 
                     *left /= right;
                 }
+                chunk::OpCode::Ternary => {
+                    if self.stack.len() < 3 {
+                        return InterpretResult::RuntimeError;
+                    }
+
+                    let else_value = self.stack.pop().unwrap();
+                    let then_value = self.stack.pop().unwrap();
+                    let predicate = self.stack.last_mut().unwrap();
+
+                    if *predicate != 0. {
+                        *predicate = then_value;
+                    } else {
+                        *predicate = else_value;
+                    }
+                }
             }
         }
     }

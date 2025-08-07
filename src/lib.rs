@@ -37,4 +37,11 @@ mod tests {
 
         assert_eq!(interpret(path), vm::InterpretResult::Ok);
     }
+
+    #[test]
+    fn ternary() {
+        let path = "./tests/expressions/ternary.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::Ok);
+    }
 }

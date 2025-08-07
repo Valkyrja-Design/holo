@@ -103,8 +103,8 @@ impl<'a> Compiler<'a> {
         }, // Semicolon
         ParseRule {
             prefix_rule: None,
-            infix_rule: None,
-            precedence: Precedence::None,
+            infix_rule: Some(Self::ternary),
+            precedence: Precedence::Assignment,
         }, // Question
         ParseRule {
             prefix_rule: None,
@@ -423,11 +423,34 @@ impl<'a> Compiler<'a> {
                 return Err(CompileError::new(
                     operator_token,
                     "Unexpected binary operator".to_string(),
-                ))
+                ));
             }
         }
 
         Ok(())
+    }
+
+    fn ternary(&mut self) -> Result<(), CompileError<'a>> {
+        let operator_kind = self.prev_token.kind;
+
+        if let token::TokenKind::Question = operator_kind {
+            // compile the 2nd operand
+            self.parse_precedence(Precedence::Assignment)?;
+
+            // consume the colon
+            self.consume(token::TokenKind::Colon, "Expected ':'")?;
+
+            // compile the 3rd operand
+            self.parse_precedence(Precedence::Assignment)?;
+
+            self.emit_opcode(chunk::OpCode::Ternary);
+            Ok(())
+        } else {
+            Err(CompileError::new(
+                self.prev_token.clone(),
+                "Expected '?'".to_string(),
+            ))
+        }
     }
 
     fn parse_precedence(&mut self, precedence: Precedence) -> Result<(), CompileError<'a>> {

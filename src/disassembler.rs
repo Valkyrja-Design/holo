@@ -24,6 +24,7 @@ pub fn disassemble_instr(chunk: &chunk::Chunk, offset: usize) -> usize {
         chunk::OpCode::Sub => simple_instr("SUB", offset),
         chunk::OpCode::Mult => simple_instr("MULT", offset),
         chunk::OpCode::Divide => simple_instr("DIVIDE", offset),
+        chunk::OpCode::Ternary => offset,
     }
 }
 
@@ -79,17 +80,5 @@ mod tests {
         chunk.write_opcode(chunk::OpCode::Return, 7);
 
         disassemble(&chunk, "simple test chunk");
-
-        // expected:
-        // == simple test chunk ==
-        // 0000 0001 CONSTANT 1.23
-        // 0002 0001 CONSTANT 1.23
-        // 0004 0002 CONSTANT_LONG 125.25
-        // 0008 0002 CONSTANT_LONG 125.25
-        // 0012 0003 NEGATE
-        // 0013 0004 ADD
-        // 0014 0005 SUB
-        // 0015 0006 DIVIDE
-        // 0016 0007 RETURN
     }
 }
