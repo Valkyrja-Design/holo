@@ -53,8 +53,6 @@ impl<'a> VM<'a> {
                     self.stack.push(Value::Bool(false));
                 }
                 OpCode::Return => {
-                    println!("{:#?}", self.stack.pop().unwrap());
-
                     return InterpretResult::Ok;
                 }
                 OpCode::Negate => match self.stack.last_mut() {
@@ -190,6 +188,13 @@ impl<'a> VM<'a> {
                         }
                     }
                 }
+                OpCode::Print => {
+                    if self.stack.is_empty() {
+                        return InterpretResult::RuntimeError;
+                    }
+
+                    println!("{:#?}", self.stack.pop().unwrap());
+                }
             }
         }
     }
@@ -227,8 +232,6 @@ impl<'a> VM<'a> {
                 InterpretResult::Ok
             }
             (Value::Object(left), Value::Object(right)) => unsafe {
-                println!("{:#?}", self.str_intern_table);
-
                 // SAFETY: we only ever use GC allocated pointers which are
                 // made sure to be valid by the GC
                 match (&**left, &*right) {
@@ -319,11 +322,12 @@ mod tests {
         for _ in 256..512 {
             let idx = chunk.add_constant(Value::Number(125.25));
 
-            chunk.write_opcode(OpCode::ConstantLong, 2);
-            chunk.write_as_24bit_int(idx, 2);
+            chunk.write_opcode(OpCode::ConstantLong, 1);
+            chunk.write_as_24bit_int(idx, 1);
         }
 
-        chunk.write_opcode(OpCode::Return, 3);
+        chunk.write_opcode(OpCode::Print, 1);
+        chunk.write_opcode(OpCode::Return, 2);
 
         let mut gc = gc::GC::new();
         let str_intern_table = StringInternTable::new();
@@ -339,23 +343,24 @@ mod tests {
         for _ in 0..2 {
             let idx = chunk.add_constant(Value::Number(1.23)) as u8;
 
-            chunk.write_opcode(OpCode::Constant, 1);
-            chunk.write_byte(idx, 1);
+            chunk.write_opcode(OpCode::Constant, 7);
+            chunk.write_byte(idx, 7);
         }
 
         for _ in 2..4 {
             let idx = chunk.add_constant(Value::Number(125.25));
 
-            chunk.write_opcode(OpCode::ConstantLong, 2);
-            chunk.write_as_24bit_int(idx, 2);
+            chunk.write_opcode(OpCode::ConstantLong, 7);
+            chunk.write_as_24bit_int(idx, 7);
         }
 
-        chunk.write_opcode(OpCode::Negate, 3);
-        chunk.write_opcode(OpCode::Add, 4);
-        chunk.write_opcode(OpCode::Sub, 5);
-        chunk.write_opcode(OpCode::Divide, 6);
+        chunk.write_opcode(OpCode::Negate, 7);
+        chunk.write_opcode(OpCode::Add, 7);
+        chunk.write_opcode(OpCode::Sub, 7);
+        chunk.write_opcode(OpCode::Divide, 7);
 
-        chunk.write_opcode(OpCode::Return, 7);
+        chunk.write_opcode(OpCode::Print, 7);
+        chunk.write_opcode(OpCode::Return, 8);
 
         let mut gc = gc::GC::new();
         let str_intern_table = StringInternTable::new();
@@ -371,14 +376,15 @@ mod tests {
 
         let idx = chunk.add_constant(Value::Number(125.25));
 
-        chunk.write_opcode(OpCode::ConstantLong, 2);
-        chunk.write_as_24bit_int(idx, 2);
+        chunk.write_opcode(OpCode::ConstantLong, 3);
+        chunk.write_as_24bit_int(idx, 3);
 
         for _ in 0..INSTR_COUNT {
             chunk.write_opcode(OpCode::Negate, 3);
         }
 
-        chunk.write_opcode(OpCode::Return, 3);
+        chunk.write_opcode(OpCode::Print, 3);
+        chunk.write_opcode(OpCode::Return, 8);
 
         let mut gc = gc::GC::new();
         let str_intern_table = StringInternTable::new();

@@ -1,6 +1,6 @@
 ## Holo
 
-Holo is a small dynamically-typed and interpreted language heavily inspired from [Lox](https://craftinginterpreters.com) and written in Rust
+Holo is a small dynamically-typed and interpreted language heavily inspired from [Lox](https://craftinginterpreters.com), written in Rust
 
 ## TODO
 
@@ -16,3 +16,4 @@ print -
 - [ ] multi-line strings
 - [ ] string interpolation
 - [ ] Better error messages
+- [ ] standard library

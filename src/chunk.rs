@@ -21,30 +21,32 @@ pub enum OpCode {
     GreaterEqual,
     Less,
     LessEqual,
+    Print,
 }
 
 impl From<u8> for OpCode {
     fn from(value: u8) -> Self {
         match value {
-            0 => OpCode::Constant,
-            1 => OpCode::ConstantLong,
-            2 => OpCode::Nil,
-            3 => OpCode::True,
-            4 => OpCode::False,
-            5 => OpCode::Return,
-            6 => OpCode::Negate,
-            7 => OpCode::Add,
-            8 => OpCode::Sub,
-            9 => OpCode::Mult,
-            10 => OpCode::Divide,
-            11 => OpCode::Ternary,
-            12 => OpCode::Not,
-            13 => OpCode::Equal,
-            14 => OpCode::NotEqual,
-            15 => OpCode::Greater,
-            16 => OpCode::GreaterEqual,
-            17 => OpCode::Less,
-            18 => OpCode::LessEqual,
+            0 => Self::Constant,
+            1 => Self::ConstantLong,
+            2 => Self::Nil,
+            3 => Self::True,
+            4 => Self::False,
+            5 => Self::Return,
+            6 => Self::Negate,
+            7 => Self::Add,
+            8 => Self::Sub,
+            9 => Self::Mult,
+            10 => Self::Divide,
+            11 => Self::Ternary,
+            12 => Self::Not,
+            13 => Self::Equal,
+            14 => Self::NotEqual,
+            15 => Self::Greater,
+            16 => Self::GreaterEqual,
+            17 => Self::Less,
+            18 => Self::LessEqual,
+            19 => Self::Print,
             _ => panic!("invalid opcode!"),
         }
     }
@@ -72,6 +74,7 @@ impl From<OpCode> for u8 {
             OpCode::GreaterEqual => 16,
             OpCode::Less => 17,
             OpCode::LessEqual => 18,
+            OpCode::Print => 19,
         }
     }
 }

@@ -368,11 +368,13 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             self.report_err(err);
         }
 
-        if let Err(err) = self.expression() {
-            self.report_err(err);
+        while !self.check(TokenKind::Eof) {
+            if let Err(err) = self.declaration() {
+                self.report_err(err);
+            }
         }
 
-        if let Err(err) = self.consume(TokenKind::Eof, "Expected end of expression") {
+        if let Err(err) = self.consume(TokenKind::Eof, "Expected end of file") {
             self.report_err(err);
         }
 
@@ -383,6 +385,28 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         } else {
             None
         }
+    }
+
+    fn declaration(&mut self) -> Result<(), CompileError<'a>> {
+        self.statement()
+    }
+
+    fn statement(&mut self) -> Result<(), CompileError<'a>> {
+        match self.curr_token.kind {
+            TokenKind::Print => {
+                self.advance()?;
+                self.print_statement()
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn print_statement(&mut self) -> Result<(), CompileError<'a>> {
+        self.expression()?;
+        self.consume(TokenKind::Semicolon, "Expected ';' at the end of statement")?;
+        self.emit_opcode(OpCode::Print);
+
+        Ok(())
     }
 
     fn expression(&mut self) -> Result<(), CompileError<'a>> {
@@ -562,11 +586,15 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
     }
 
     fn consume(&mut self, expected: TokenKind, err: &'a str) -> Result<(), CompileError<'a>> {
-        if self.curr_token.kind == expected {
+        if self.check(expected) {
             self.advance()
         } else {
             Err(CompileError::new(self.curr_token.clone(), err.to_string()))
         }
+    }
+
+    fn check(&self, kind: TokenKind) -> bool {
+        self.curr_token.kind == kind
     }
 
     fn finish(&mut self) {

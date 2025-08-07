@@ -1,1 +1,1 @@
-"str plus " + 2
+print "str plus " + 2;

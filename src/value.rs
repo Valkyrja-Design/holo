@@ -12,9 +12,9 @@ pub enum Value {
 impl Debug for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Nil => f.write_str("Nil"),
-            Self::Bool(value) => f.write_str(&format!("Bool(\n\t{},\n)", value)),
-            Self::Number(value) => f.write_str(&format!("Number(\n\t{},\n)", value)),
+            Self::Nil => f.write_str("nil"),
+            Self::Bool(value) => f.write_str(&format!("{}", value)),
+            Self::Number(value) => f.write_str(&format!("{}", value)),
             Self::Object(obj) => {
                 unsafe {
                     // SAFETY: `ObjRef`s on which `Debug` is attempted to be

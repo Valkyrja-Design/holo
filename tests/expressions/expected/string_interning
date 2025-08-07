@@ -1,15 +1,1 @@
-{
-    "intern me",
-}
-{
-    "intern me",
-    "intern meintern me",
-}
-{
-    "intern meintern meintern me",
-    "intern me",
-    "intern meintern me",
-}
-Str(
-    "intern meintern meintern meintern me",
-)
+intern meintern meintern meintern me

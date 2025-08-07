@@ -35,6 +35,7 @@ pub fn disassemble_instr(chunk: &Chunk, offset: usize) -> usize {
         OpCode::GreaterEqual => simple_instr("GREATER_EQUAL", offset),
         OpCode::Less => simple_instr("LESS", offset),
         OpCode::LessEqual => simple_instr("LESS_EQUAL", offset),
+        OpCode::Print => simple_instr("PRINT", offset),
     }
 }
 
