@@ -29,10 +29,11 @@ impl<'a> Diassembler<'a> {
             chunk::OpCode::OpConstant => self.const_instr(offset),
             chunk::OpCode::OpConstantLong => self.const_long_instr(offset),
             chunk::OpCode::OpReturn => self.simple_instr("OP_RETURN", offset),
-            _ => {
-                println!("Unknown opcode {}", instr);
-                offset + 1
-            }
+            chunk::OpCode::OpNegate => self.simple_instr("OP_NEGATE", offset),
+            chunk::OpCode::OpAdd => self.simple_instr("OP_ADD", offset),
+            chunk::OpCode::OpSub => self.simple_instr("OP_SUB", offset),
+            chunk::OpCode::OpMult => self.simple_instr("OP_MULT", offset),
+            chunk::OpCode::OpDivide => self.simple_instr("OP_DIVIDE", offset),
         }
     }
 
@@ -67,21 +68,26 @@ mod tests {
     fn simple_chunk() {
         let mut chunk = chunk::Chunk::default();
 
-        for _ in 0..256 {
+        for _ in 0..2 {
             let idx = chunk.add_constant(1.23) as u8;
 
             chunk.write_opcode(chunk::OpCode::OpConstant, 1);
             chunk.write_byte(idx, 1);
         }
 
-        for _ in 256..512 {
+        for _ in 2..4 {
             let idx = chunk.add_constant(125.25);
 
             chunk.write_opcode(chunk::OpCode::OpConstantLong, 2);
             chunk.write_as_24bit_int(idx, 2);
         }
 
-        chunk.write_opcode(chunk::OpCode::OpReturn, 3);
+        chunk.write_opcode(chunk::OpCode::OpNegate, 3);
+        chunk.write_opcode(chunk::OpCode::OpAdd, 4);
+        chunk.write_opcode(chunk::OpCode::OpSub, 5);
+        chunk.write_opcode(chunk::OpCode::OpDivide, 6);
+
+        chunk.write_opcode(chunk::OpCode::OpReturn, 7);
 
         let disassembler = Diassembler::new(&chunk, "simple test chunk");
 

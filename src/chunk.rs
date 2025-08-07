@@ -5,6 +5,11 @@ pub enum OpCode {
     OpConstant,
     OpConstantLong,
     OpReturn,
+    OpNegate,
+    OpAdd,
+    OpSub,
+    OpMult,
+    OpDivide,
 }
 
 impl From<u8> for OpCode {
@@ -13,6 +18,11 @@ impl From<u8> for OpCode {
             0 => OpCode::OpConstant,
             1 => OpCode::OpConstantLong,
             2 => OpCode::OpReturn,
+            3 => OpCode::OpNegate,
+            4 => OpCode::OpAdd,
+            5 => OpCode::OpSub,
+            6 => OpCode::OpMult,
+            7 => OpCode::OpDivide,
             _ => panic!("invalid opcode!"),
         }
     }
@@ -24,6 +34,11 @@ impl From<OpCode> for u8 {
             OpCode::OpConstant => 0,
             OpCode::OpConstantLong => 1,
             OpCode::OpReturn => 2,
+            OpCode::OpNegate => 3,
+            OpCode::OpAdd => 4,
+            OpCode::OpSub => 5,
+            OpCode::OpMult => 6,
+            OpCode::OpDivide => 7,
         }
     }
 }
