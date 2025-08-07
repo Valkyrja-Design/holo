@@ -41,6 +41,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         gc: gc::GC,
         str_intern_table: StringInternTable,
         global_var_names: Vec<String>,
+        globals: Vec<Option<Value>>,
         output_stream: &'a mut T,
         err_stream: &'a mut U,
     ) -> Self {
@@ -58,7 +59,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
             stack: Vec::new(),
             gc,
             str_intern_table,
-            globals: vec![None; global_var_names.len()],
+            globals,
             global_var_names,
             output_stream,
             err_stream,
@@ -372,16 +373,9 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 OpCode::Call => {
                     let arg_count = self.read_int8() as u8;
 
-                    // before setting the current frame to the new call frame
-                    // we need to write back the current ip to the current frame on the call stack
-                    self.call_stack.last_mut().unwrap().ip = self.current_frame.ip;
-
                     if self.call_value(arg_count) != InterpretResult::Ok {
                         return InterpretResult::RuntimeError;
                     }
-
-                    // set the current frame to the top of the call stack
-                    self.current_frame = self.call_stack.last().unwrap().clone();
                 }
             }
         }
@@ -401,6 +395,21 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     // made sure to be valid by the GC
                     match &*func_ptr {
                         Object::Func(func) => func,
+                        Object::NativeFunc(native_func) => {
+                            let args = &self.stack[self.stack.len() - (arg_count as usize)..];
+                            let ret = native_func.call(args);
+
+                            match ret {
+                                Ok(value) => {
+                                    self.stack.truncate(self.stack.len() - (arg_count as usize) - 1);
+                                    self.stack.push(value);
+                                    return InterpretResult::Ok;
+                                }
+                                Err(err) => {
+                                    return self.runtime_error(&err);
+                                }
+                            }
+                        }
                         _ => return self.runtime_error("Can only call functions and classes"),
                     }
                 };
@@ -419,12 +428,17 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
             ));
         }
 
+        // before setting the current frame to the new call frame
+        // we need to write back the current ip to the current frame on the call stack
+        self.call_stack.last_mut().unwrap().ip = self.current_frame.ip;
         self.call_stack.push(CallFrame {
             function,
             ip: 0,
             stack_start: self.stack.len() - (arg_count as usize),
         });
 
+        // set the current frame to the top of the call stack
+        self.current_frame = self.call_stack.last().unwrap().clone();
         InterpretResult::Ok
     }
 

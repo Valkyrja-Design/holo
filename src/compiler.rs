@@ -3,7 +3,7 @@ use crate::sym_table;
 use super::{
     chunk::{Chunk, OpCode},
     gc::GC,
-    object::{Function, FunctionKind, Object},
+    object::{Function, Object},
     scanner::Scanner,
     sym_table::SymbolTable,
     table::StringInternTable,

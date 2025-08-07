@@ -2,6 +2,7 @@ pub mod chunk;
 pub mod compiler;
 pub mod disassembler;
 pub mod gc;
+pub mod native;
 pub mod object;
 pub mod scanner;
 pub mod sym_table;
@@ -22,8 +23,19 @@ where
         Ok(source) => {
             let mut gc = gc::GC::new();
             let mut str_intern_table = table::StringInternTable::new();
+            let mut globals: Vec<Option<value::Value>> = Vec::new();
+
             let (global_var_names, compiled_function) = {
                 let mut sym_table = sym_table::SymbolTable::new();
+                let native_funcs = native::get_native_funcs();
+
+                // define native functions as global variables
+                for native_func in &native_funcs {
+                    let native_func_ptr = gc.alloc(object::Object::NativeFunc(native_func.clone()));
+                    sym_table.declare(&native_func.name);
+                    globals.push(Some(value::Value::Object(native_func_ptr)));
+                }
+                
                 let compiler = compiler::Compiler::new(
                     &source,
                     "<main>",
@@ -33,8 +45,14 @@ where
                     &mut err_stream,
                 );
                 let compiled_function = compiler.compile();
+                let global_var_names = sym_table.names_as_owned();
+                
+                // we need to push `None` for each global variable that is not a native function
+                for _ in  &global_var_names[native_funcs.len()..] {
+                    globals.push(None);
+                }
 
-                (sym_table.names_as_owned(), compiled_function)
+                (global_var_names, compiled_function)
             };
 
             if let Some(function) = compiled_function {
@@ -44,6 +62,7 @@ where
                     gc,
                     str_intern_table,
                     global_var_names,
+                    globals,
                     &mut output_stream,
                     &mut err_stream,
                 );
@@ -61,4 +80,11 @@ where
 mod tests {
     use crate::interpret;
     use std::io::{stderr, stdout};
+
+    #[test]
+    fn clock() {
+        let path = "test_files/native/clock.holo";
+
+        interpret(path, stdout(), stderr());
+    }
 }

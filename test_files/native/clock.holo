@@ -1,0 +1,1 @@
+print clock(); // expect large number of seconds

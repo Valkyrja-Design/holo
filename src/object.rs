@@ -1,10 +1,6 @@
 use super::chunk::Chunk;
+use super::native::NativeFunc;
 use std::fmt::Debug;
-
-pub enum FunctionKind {
-    Script,
-    Function,
-}
 
 pub struct Function {
     pub name: String,
@@ -15,6 +11,7 @@ pub struct Function {
 pub enum Object {
     Str(String),
     Func(Function),
+    NativeFunc(NativeFunc),
 }
 
 impl Object {
@@ -38,6 +35,9 @@ impl Debug for Object {
         match self {
             Self::Str(s) => f.write_str(s),
             Self::Func(func) => f.write_str(&format!("<fn {}>", func.name)),
+            Self::NativeFunc(native_func) => {
+                f.write_str(&format!("<native fn {}>", native_func.name))
+            }
         }
     }
 }
