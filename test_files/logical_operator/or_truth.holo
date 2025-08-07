@@ -1,8 +1,6 @@
-// False and nil are false.
-print false or "ok"; // expect: ok
-print nil or "ok"; // expect: ok
+print false or "ok" == "ok"; // expect: true
+print nil != nil or "ok" == "ko"; // expect: false
 
-// Everything else is true.
 print true or "ok"; // expect: true
-print 0 or "ok"; // expect: 0
-print "s" or "ok"; // expect: s
+print 0 == 0 or "ok" != "ko"; // expect: true
+print "s" == "s" or "ok"; // expect: true

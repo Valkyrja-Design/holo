@@ -248,8 +248,8 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }, // Number
         ParseRule {
             prefix_rule: None,
-            infix_rule: None,
-            precedence: Precedence::None,
+            infix_rule: Some(Self::logical_and),
+            precedence: Precedence::And,
         }, // And
         ParseRule {
             prefix_rule: None,
@@ -288,8 +288,8 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }, // Nil
         ParseRule {
             prefix_rule: None,
-            infix_rule: None,
-            precedence: Precedence::None,
+            infix_rule: Some(Self::logical_or),
+            precedence: Precedence::Or,
         }, // Or
         ParseRule {
             prefix_rule: None,
@@ -819,6 +819,48 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             Err(CompileError::new(
                 self.prev_token.clone(),
                 "Expected '?'".to_string(),
+            ))
+        }
+    }
+
+    fn logical_or(&mut self, _: bool) -> Result<(), CompileError<'a>> {
+        let operator_kind = self.prev_token.kind;
+
+        if let TokenKind::Or = operator_kind {
+            let then_jump = self.emit_jump(OpCode::JumpIfTrue);
+
+            // we'll just flow-through to the next instruction if the left operand is false
+            // compile the right operand
+            self.emit_opcode(OpCode::Pop);
+            self.parse_precedence(Precedence::And)?;
+            self.patch_jump(then_jump)?;
+
+            Ok(())
+        } else {
+            Err(CompileError::new(
+                self.prev_token.clone(),
+                "Expected 'or'".to_string(),
+            ))
+        }
+    }
+
+    fn logical_and(&mut self, _: bool) -> Result<(), CompileError<'a>> {
+        let operator_kind = self.prev_token.kind;
+
+        if let TokenKind::And = operator_kind {
+            let then_jump = self.emit_jump(OpCode::JumpIfFalse);
+
+            // we'll just flow-through to the next instruction if the left operand is true
+            // compile the right operand
+            self.emit_opcode(OpCode::Pop);
+            self.parse_precedence(Precedence::Equality)?;
+            self.patch_jump(then_jump)?;
+
+            Ok(())
+        } else {
+            Err(CompileError::new(
+                self.prev_token.clone(),
+                "Expected 'and'".to_string(),
             ))
         }
     }

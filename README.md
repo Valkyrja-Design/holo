@@ -20,5 +20,5 @@ print -
 - [ ] const vars
 - [ ] multi-pass compilation
 - [ ] string interpolation
-- [ ] Better error messages
+- [ ] Better error handling/messages
 - [ ] standard library
