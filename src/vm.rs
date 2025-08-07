@@ -1,5 +1,3 @@
-use crate::disassembler::{disassemble, disassemble_instr};
-
 use super::{
     chunk::{Chunk, OpCode},
     gc,
@@ -401,7 +399,8 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
 
                             match ret {
                                 Ok(value) => {
-                                    self.stack.truncate(self.stack.len() - (arg_count as usize) - 1);
+                                    self.stack
+                                        .truncate(self.stack.len() - (arg_count as usize) - 1);
                                     self.stack.push(value);
                                     return InterpretResult::Ok;
                                 }
@@ -455,7 +454,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 *value = Some(initializer);
                 InterpretResult::Ok
             }
-            _ => unreachable!(),
+            _ => unreachable!("No global variable at index {}", index),
         }
     }
 
@@ -516,8 +515,9 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         }
 
         let right = self.stack.pop().unwrap();
+        let left = self.stack.last_mut().unwrap();
 
-        match (self.stack.last_mut().unwrap(), right) {
+        match (left, right) {
             (Value::Number(left), Value::Number(right)) => {
                 op(left, right);
                 InterpretResult::Ok
@@ -567,8 +567,9 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         }
 
         let right = self.stack.pop().unwrap();
+        let left = self.stack.last_mut().unwrap();
 
-        match (self.stack.last_mut().unwrap(), right) {
+        match (left, right) {
             (Value::Number(_), Value::Number(0.0)) => self.runtime_error("Division by 0"),
             (Value::Number(left), Value::Number(right)) => {
                 *left /= right;
@@ -584,7 +585,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
             // object, the memory is managed by the GC
             match &*self.current_frame.function {
                 Object::Func(Function { chunk, .. }) => chunk,
-                _ => unreachable!(),
+                _ => unreachable!("Current frame does not point to a function"),
             }
         }
     }
@@ -655,7 +656,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 // made sure to be valid by the GC
                 match &*frame.function {
                     Object::Func(func) => func,
-                    _ => unreachable!(),
+                    _ => unreachable!("Call frame does not point to a function"),
                 }
             };
 

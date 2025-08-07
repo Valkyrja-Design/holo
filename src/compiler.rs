@@ -1,5 +1,3 @@
-use crate::sym_table;
-
 use super::{
     chunk::{Chunk, OpCode},
     gc::GC,
@@ -10,7 +8,7 @@ use super::{
     token::{Token, TokenKind},
     value::Value,
 };
-use std::{char::MAX, io::Write};
+use std::io::Write;
 
 type Result<'a, T> = std::result::Result<T, CompileError<'a>>;
 
