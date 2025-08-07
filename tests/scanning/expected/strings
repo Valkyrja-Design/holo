@@ -1,17 +1,17 @@
 [
     Token {
-        token_kind: String,
-        token: "\"\"",
+        kind: String,
+        lexeme: "\"\"",
         line: 1,
     },
     Token {
-        token_kind: String,
-        token: "\"string\"",
+        kind: String,
+        lexeme: "\"string\"",
         line: 2,
     },
     Token {
-        token_kind: Eof,
-        token: "",
+        kind: Eof,
+        lexeme: "",
         line: 3,
     },
 ]

@@ -212,25 +212,25 @@ impl<'a> Scanner<'a> {
         let identifier = &self.source[self.start_offset..self.curr_offset];
 
         match identifier {
-            "and"      => token::TokenKind::And,
-            "break"    => token::TokenKind::Break,
-            "class"    => token::TokenKind::Class,
+            "and" => token::TokenKind::And,
+            "break" => token::TokenKind::Break,
+            "class" => token::TokenKind::Class,
             "continue" => token::TokenKind::Continue,
-            "else"     => token::TokenKind::Else,
-            "false"    => token::TokenKind::False,
-            "for"      => token::TokenKind::For,
-            "fun"      => token::TokenKind::Fun,
-            "if"       => token::TokenKind::If,
-            "nil"      => token::TokenKind::Nil,
-            "or"       => token::TokenKind::Or,
-            "print"    => token::TokenKind::Print,
-            "return"   => token::TokenKind::Return,
-            "super"    => token::TokenKind::Super,
-            "this"     => token::TokenKind::This,
-            "true"     => token::TokenKind::True,
-            "var"      => token::TokenKind::Var,
-            "while"    => token::TokenKind::While,
-            _          => token::TokenKind::Identifier, // Default to Identifier
+            "else" => token::TokenKind::Else,
+            "false" => token::TokenKind::False,
+            "for" => token::TokenKind::For,
+            "fun" => token::TokenKind::Fun,
+            "if" => token::TokenKind::If,
+            "nil" => token::TokenKind::Nil,
+            "or" => token::TokenKind::Or,
+            "print" => token::TokenKind::Print,
+            "return" => token::TokenKind::Return,
+            "super" => token::TokenKind::Super,
+            "this" => token::TokenKind::This,
+            "true" => token::TokenKind::True,
+            "var" => token::TokenKind::Var,
+            "while" => token::TokenKind::While,
+            _ => token::TokenKind::Identifier, // Default to Identifier
         }
     }
 
@@ -328,18 +328,18 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn make_token(&self, token_kind: token::TokenKind) -> token::Token<'a> {
+    fn make_token(&self, kind: token::TokenKind) -> token::Token<'a> {
         token::Token {
-            token_kind,
-            token: &self.source[self.start_offset..self.curr_offset],
+            kind,
+            lexeme: &self.source[self.start_offset..self.curr_offset],
             line: self.curr_line,
         }
     }
 
     fn make_error_token(&self, err: &'static str) -> token::Token<'a> {
         token::Token {
-            token_kind: token::TokenKind::Error,
-            token: err,
+            kind: token::TokenKind::Error,
+            lexeme: err,
             line: self.curr_line,
         }
     }
@@ -379,8 +379,8 @@ mod tests {
             loop {
                 match scanner.scan_token() {
                     token @ token::Token {
-                        token_kind: token::TokenKind::Eof,
-                        token: _,
+                        kind: token::TokenKind::Eof,
+                        lexeme: _,
                         line: _,
                     } => {
                         tokens.push(token);
@@ -389,7 +389,7 @@ mod tests {
                     token => tokens.push(token),
                 }
             }
-            
+
             assert_eq!(expected, format!("{tokens:#?}\n"));
 
             // // write output to file

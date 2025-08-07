@@ -1,27 +1,27 @@
 [
     Token {
-        token_kind: Identifier,
-        token: "space",
+        kind: Identifier,
+        lexeme: "space",
         line: 1,
     },
     Token {
-        token_kind: Identifier,
-        token: "tabs",
+        kind: Identifier,
+        lexeme: "tabs",
         line: 1,
     },
     Token {
-        token_kind: Identifier,
-        token: "newlines",
+        kind: Identifier,
+        lexeme: "newlines",
         line: 1,
     },
     Token {
-        token_kind: Identifier,
-        token: "end",
+        kind: Identifier,
+        lexeme: "end",
         line: 12,
     },
     Token {
-        token_kind: Eof,
-        token: "",
+        kind: Eof,
+        lexeme: "",
         line: 13,
     },
 ]

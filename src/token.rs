@@ -1,4 +1,4 @@
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TokenKind {
     // parenthesis
     LeftParen,
@@ -61,9 +61,9 @@ pub enum TokenKind {
     Eof,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Token<'a> {
-    pub token_kind: TokenKind,
-    pub token: &'a str,
+    pub kind: TokenKind,
+    pub lexeme: &'a str,
     pub line: usize,
 }

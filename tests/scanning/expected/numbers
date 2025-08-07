@@ -1,32 +1,32 @@
 [
     Token {
-        token_kind: Number,
-        token: "123",
+        kind: Number,
+        lexeme: "123",
         line: 1,
     },
     Token {
-        token_kind: Number,
-        token: "123.456",
+        kind: Number,
+        lexeme: "123.456",
         line: 2,
     },
     Token {
-        token_kind: Dot,
-        token: ".",
+        kind: Dot,
+        lexeme: ".",
         line: 3,
     },
     Token {
-        token_kind: Number,
-        token: "456",
+        kind: Number,
+        lexeme: "456",
         line: 3,
     },
     Token {
-        token_kind: Number,
-        token: "123.",
+        kind: Number,
+        lexeme: "123.",
         line: 4,
     },
     Token {
-        token_kind: Eof,
-        token: "",
+        kind: Eof,
+        lexeme: "",
         line: 5,
     },
 ]
