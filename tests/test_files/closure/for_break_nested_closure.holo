@@ -1,0 +1,44 @@
+// Test closure with break in nested for loops
+// Python-style behavior: shared variables per loop
+var result_i0_j0;
+var result_i1_j0;
+var result_i2_j0;
+
+for (var i = 0; i < 3; i = i + 1) {
+  var outer = i * 10; // Simple numeric operation
+  
+  for (var j = 0; j < 3; j = j + 1) {
+    var inner = j * 100; // Simple numeric operation
+    
+    if (j == 1) {
+      break; // Break from inner loop when j=1
+    }
+    
+    if (i == 0 and j == 0) {
+      fun capture_i0_j0() {
+        return outer + inner; // 0 + 0 = 0
+      }
+      result_i0_j0 = capture_i0_j0;
+    }
+    
+    if (i == 1 and j == 0) {
+      fun capture_i1_j0() {
+        return outer + inner; // 10 + 0 = 10
+      }
+      result_i1_j0 = capture_i1_j0;
+    }
+    
+    if (i == 2 and j == 0) {
+      fun capture_i2_j0() {
+        return outer + inner; // 20 + 0 = 20
+      }
+      result_i2_j0 = capture_i2_j0;
+    }
+  }
+}
+
+// Variables outer/inner are local per iteration
+// But if there were shared loop variables, they'd show final values
+print result_i0_j0(); // expect: 0
+print result_i1_j0(); // expect: 10
+print result_i2_j0(); // expect: 20

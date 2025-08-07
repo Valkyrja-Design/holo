@@ -73,7 +73,6 @@ where
             let _ = writeln!(err_stream, "{err}");
         }
     }
-    // vm::InterpretResult::Ok
 }
 
 #[cfg(test)]

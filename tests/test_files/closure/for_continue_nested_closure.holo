@@ -1,0 +1,44 @@
+// Test nested closure with continue in for loop
+// Python-style behavior: all closures see the same final variable value
+var result0;
+var result2;
+var result3;
+
+for (var i = 0; i < 4; i = i + 1) {
+  var outer = i * 10; // Simple numeric operation instead of string concat
+  
+  if (i == 1) {
+    continue; // Skip i=1, should not create closure
+  }
+  
+  {
+    var inner = i * 100; // Simple numeric operation
+    
+    if (i == 0) {
+      fun captureAll0() {
+        return outer + inner + i; // All numeric addition
+      }
+      result0 = captureAll0;
+    }
+    
+    if (i == 2) {
+      fun captureAll2() {
+        return outer + inner + i;
+      }
+      result2 = captureAll2;
+    }
+    
+    if (i == 3) {
+      fun captureAll3() {
+        return outer + inner + i;
+      }
+      result3 = captureAll3;
+    }
+  }
+}
+
+// All closures capture the same variable i (final value = 4)
+// But outer/inner variables are local to each iteration (no shared issue)
+print result0(); // expect: 0 + 0 + 4 = 4
+print result2(); // expect: 20 + 200 + 4 = 224  
+print result3(); // expect: 30 + 300 + 4 = 334

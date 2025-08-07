@@ -1,0 +1,53 @@
+// Test closure with both continue and break in same loop
+// Python-style behavior: shared loop variable, local variables per iteration
+var func0;
+var func1;
+var func3;
+var func5;
+
+for (var i = 0; i < 8; i = i + 1) {
+  if (i == 2 or i == 4) {
+    continue; // Skip i=2 and i=4
+  }
+  
+  if (i == 6) {
+    break; // Break when i=6, so i=6,7 are not processed
+  }
+  
+  var local = i * 1000; // Simple numeric operation instead of string concat
+  
+  if (i == 0) {
+    fun makeClosure0() {
+      return local + i; // All numeric addition
+    }
+    func0 = makeClosure0;
+  }
+  
+  if (i == 1) {
+    fun makeClosure1() {
+      return local + i;
+    }
+    func1 = makeClosure1;
+  }
+  
+  if (i == 3) {
+    fun makeClosure3() {
+      return local + i;
+    }
+    func3 = makeClosure3;
+  }
+  
+  if (i == 5) {
+    fun makeClosure5() {
+      return local + i;
+    }
+    func5 = makeClosure5;
+  }
+}
+
+// Variable 'local' is declared fresh each iteration
+// Variable 'i' is shared across iterations (final value after break: i=6)
+print func0(); // expect: 0 + 6 = 6
+print func1(); // expect: 1000 + 6 = 1006
+print func3(); // expect: 3000 + 6 = 3006
+print func5(); // expect: 5000 + 6 = 5006

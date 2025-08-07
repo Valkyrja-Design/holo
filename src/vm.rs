@@ -18,7 +18,7 @@ struct OpenUpvalue {
     upvalue: *mut Upvalue,
 }
 
-static VEC_SIZE: usize = 1024; // Default vec size
+static VEC_SIZE: usize = 1024; // Default vec size for `VM::stack` and `VM::open_upvalues`
 
 pub struct VM<'a, T: Write, U: Write> {
     call_stack: Vec<CallFrame>,

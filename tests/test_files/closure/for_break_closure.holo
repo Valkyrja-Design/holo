@@ -1,0 +1,38 @@
+// Test closure capturing loop variable with break statement
+// Python-style behavior: all closures see the same final variable value
+var closure0;
+var closure1;
+var closure2;
+
+for (var i = 0; i < 10; i = i + 1) {
+  if (i == 3) {
+    break; // Exit loop early, should only have closures for i=0,1,2
+  }
+  
+  if (i == 0) {
+    fun capture0() {
+      return i;
+    }
+    closure0 = capture0;
+  }
+  
+  if (i == 1) {
+    fun capture1() {
+      return i;
+    }
+    closure1 = capture1;
+  }
+  
+  if (i == 2) {
+    fun capture2() {
+      return i;
+    }
+    closure2 = capture2;
+  }
+}
+
+// All closures capture the same variable i
+// After break at i=3, final value is i=3, so all closures return 3
+print closure0(); // expect: 3
+print closure1(); // expect: 3
+print closure2(); // expect: 3
