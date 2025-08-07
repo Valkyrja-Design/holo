@@ -46,54 +46,42 @@ impl<'a> VM<'a> {
                     }
                 }
                 chunk::OpCode::Add => {
-                    let right = self.stack.pop();
-                    let left = self.stack.last_mut();
-
-                    if left.is_none() || right.is_none() {
+                    if self.stack.len() < 2 {
                         return InterpretResult::RuntimeError;
                     }
 
-                    let left = left.unwrap();
-                    let right = right.unwrap();
+                    let right = self.stack.pop().unwrap();
+                    let left = self.stack.last_mut().unwrap();
 
                     *left += right;
                 }
                 chunk::OpCode::Sub => {
-                    let right = self.stack.pop();
-                    let left = self.stack.last_mut();
-
-                    if left.is_none() || right.is_none() {
+                    if self.stack.len() < 2 {
                         return InterpretResult::RuntimeError;
                     }
 
-                    let left = left.unwrap();
-                    let right = right.unwrap();
+                    let right = self.stack.pop().unwrap();
+                    let left = self.stack.last_mut().unwrap();
 
                     *left -= right;
                 }
                 chunk::OpCode::Mult => {
-                    let right = self.stack.pop();
-                    let left = self.stack.last_mut();
-
-                    if left.is_none() || right.is_none() {
+                    if self.stack.len() < 2 {
                         return InterpretResult::RuntimeError;
                     }
 
-                    let left = left.unwrap();
-                    let right = right.unwrap();
+                    let right = self.stack.pop().unwrap();
+                    let left = self.stack.last_mut().unwrap();
 
                     *left *= right;
                 }
                 chunk::OpCode::Divide => {
-                    let right = self.stack.pop();
-                    let left = self.stack.last_mut();
-
-                    if left.is_none() || right.is_none() {
+                    if self.stack.len() < 2 {
                         return InterpretResult::RuntimeError;
                     }
 
-                    let left = left.unwrap();
-                    let right = right.unwrap();
+                    let right = self.stack.pop().unwrap();
+                    let left = self.stack.last_mut().unwrap();
 
                     if right == 0.0 {
                         return InterpretResult::RuntimeError;
