@@ -6,11 +6,11 @@ pub struct Diassembler<'a> {
 }
 
 impl<'a> Diassembler<'a> {
-    fn new(chunk: &'a chunk::Chunk, chunk_name: &'a str) -> Diassembler<'a> {
+    pub fn new(chunk: &'a chunk::Chunk, chunk_name: &'a str) -> Diassembler<'a> {
         Diassembler { chunk, chunk_name }
     }
 
-    fn disassemble(&self) {
+    pub fn disassemble(&self) {
         println!("== {} ==", self.chunk_name);
 
         let mut offset: usize = 0;
@@ -20,7 +20,7 @@ impl<'a> Diassembler<'a> {
         }
     }
 
-    fn disassemble_instr(&self, offset: usize) -> usize {
+    pub fn disassemble_instr(&self, offset: usize) -> usize {
         print!("{:04} {:04} ", offset, self.chunk.get_line_of(offset));
 
         let instr = self.chunk.code[offset];
@@ -45,7 +45,7 @@ impl<'a> Diassembler<'a> {
     }
 
     fn const_long_instr(&self, offset: usize) -> usize {
-        let idx = chunk::Chunk::read_as_24bit_int(&self.chunk.code[offset + 1..]);
+        let idx = chunk::Chunk::read_as_24bit_int(&self.chunk.code[offset + 1..offset + 4]);
 
         println!("OP_CONSTANT_LONG {}", self.chunk.constants[idx]);
 
@@ -82,7 +82,6 @@ mod tests {
         }
 
         chunk.write_opcode(chunk::OpCode::OpReturn, 3);
-        chunk.write_opcode(chunk::OpCode::OpReturn, 4);
 
         let disassembler = Diassembler::new(&chunk, "simple test chunk");
 

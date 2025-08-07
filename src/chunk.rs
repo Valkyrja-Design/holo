@@ -80,16 +80,16 @@ impl Chunk {
     }
 
     pub fn write_as_24bit_int(&mut self, mut value: usize, line: usize) {
-        const MASK_BYTE: usize = (1usize << 8) - 1;
+        const MASK: usize = (1usize << 8) - 1;
         let mut bytes: [u8; 3] = [0; 3];
 
-        bytes[2] = (value & MASK_BYTE) as u8;
+        bytes[2] = (value & MASK) as u8;
         value >>= 8;
 
-        bytes[1] = (value & MASK_BYTE) as u8;
+        bytes[1] = (value & MASK) as u8;
         value >>= 8;
 
-        bytes[0] = (value & MASK_BYTE) as u8;
+        bytes[0] = (value & MASK) as u8;
 
         self.write_bytes(&bytes, &[line; 3]);
     }
