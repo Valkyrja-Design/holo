@@ -1,0 +1,20 @@
+{
+    var a = "str";
+
+    while (a != "strrrr") {
+        var b = a + "r";
+        a = b;
+
+        print a;
+        
+        if (a == "strr") {
+            break;
+        }
+    }
+
+    print a;
+}
+
+// expect:
+// strr
+// strr

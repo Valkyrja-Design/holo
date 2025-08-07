@@ -43,3 +43,9 @@ where
     }
     // vm::InterpretResult::Ok
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io::{stderr, stdout};
+
+}

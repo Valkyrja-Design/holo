@@ -393,8 +393,11 @@ mod tests {
                 }
             }
 
-            assert_eq!(expected, format!("{tokens:#?}\n"));
+            let normalized_expected = expected.trim().replace("\r\n", "\n");
+            let normalized_output = format!("{tokens:#?}\n").trim().replace("\r\n", "\n");
 
+            assert_eq!(normalized_output, normalized_expected);
+            
             // // write output to file
             // let mut expected_file = std::fs::File::create(expected_file).unwrap();
 

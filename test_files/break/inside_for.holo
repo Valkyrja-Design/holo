@@ -1,0 +1,19 @@
+var a = 0;
+
+{
+    var b = 4;
+
+    for (var a = 0; a < b; a = a + 1) {
+        if (a == 2) {
+            break;
+        }
+        print a;
+    }
+
+    print b;
+}
+
+// expect:
+// 0
+// 1
+// 4

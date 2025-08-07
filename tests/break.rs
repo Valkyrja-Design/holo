@@ -6,11 +6,11 @@ use std::io::Write;
 use std::path::PathBuf;
 
 #[test]
-fn while_stmt() {
+fn break_stmt() {
     // base directory containing the test inputs and expected outputs
     let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("test_files")
-        .join("while");
+        .join("break");
     let expected_dir = base_dir.join("expected");
 
     for entry in fs::read_dir(&base_dir).unwrap() {

@@ -7,7 +7,9 @@ use super::{
     token::{Token, TokenKind},
     value::Value,
 };
-use std::{collections::BTreeMap, io::Write};
+use std::io::Write;
+
+type Result<'a, T> = std::result::Result<T, CompileError<'a>>;
 
 struct CompileError<'a> {
     token: Token<'a>,
@@ -70,7 +72,30 @@ impl std::ops::Add<usize> for Precedence {
 
 struct Local<'a> {
     name: &'a str,
-    depth: i32,
+    depth: usize,
+    initialized: bool,
+}
+
+impl<'a> Local<'a> {
+    fn new(name: &'a str, depth: usize, initialized: bool) -> Self {
+        Local {
+            name,
+            depth,
+            initialized,
+        }
+    }
+}
+
+struct ParseRule<'a, 'b, W: Write> {
+    prefix_rule: Option<fn(&mut Compiler<'a, 'b, W>, bool) -> Result<'a, ()>>,
+    infix_rule: Option<fn(&mut Compiler<'a, 'b, W>, bool) -> Result<'a, ()>>,
+    precedence: Precedence,
+}
+
+struct LoopContext {
+    loop_start: usize, // start offset of the loop bytecode (condition or the update expression)
+    scope_depth: usize, // scope depth at the start of the loop
+    break_jumps: Vec<usize>, // jump statements to patch to the end of the loop
 }
 
 pub struct Compiler<'a, 'b, W: Write> {
@@ -83,15 +108,10 @@ pub struct Compiler<'a, 'b, W: Write> {
     str_intern_table: &'b mut StringInternTable,
     sym_table: SymbolTable<'a>,
     locals: Vec<Local<'a>>,
-    curr_depth: i32,
+    curr_depth: usize,
+    loop_stacks: Vec<LoopContext>,
     had_error: bool,
     err_stream: &'b mut W,
-}
-
-struct ParseRule<'a, 'b, W: Write> {
-    prefix_rule: Option<fn(&mut Compiler<'a, 'b, W>, bool) -> Result<(), CompileError<'a>>>,
-    infix_rule: Option<fn(&mut Compiler<'a, 'b, W>, bool) -> Result<(), CompileError<'a>>>,
-    precedence: Precedence,
 }
 
 impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
@@ -374,6 +394,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             sym_table: SymbolTable::new(),
             locals: Vec::new(),
             curr_depth: 0,
+            loop_stacks: Vec::new(),
             had_error: false,
             err_stream,
         }
@@ -405,7 +426,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
     }
 
-    fn declaration(&mut self) -> Result<(), CompileError<'a>> {
+    fn declaration(&mut self) -> Result<'a, ()> {
         match self.curr_token.kind {
             TokenKind::Var => {
                 self.advance()?;
@@ -415,7 +436,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
     }
 
-    fn var_declaration(&mut self) -> Result<(), CompileError<'a>> {
+    fn var_declaration(&mut self) -> Result<'a, ()> {
         self.consume(TokenKind::Identifier, "Expected variable name")?;
 
         let name = self.prev_token.lexeme;
@@ -450,7 +471,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
     }
 
-    fn statement(&mut self) -> Result<(), CompileError<'a>> {
+    fn statement(&mut self) -> Result<'a, ()> {
         match self.curr_token.kind {
             TokenKind::Print => {
                 self.advance()?;
@@ -475,11 +496,19 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 self.advance()?;
                 self.for_stmt()
             }
+            TokenKind::Continue => {
+                self.advance()?;
+                self.continue_stmt()
+            }
+            TokenKind::Break => {
+                self.advance()?;
+                self.break_stmt()
+            }
             _ => self.expression_statement(),
         }
     }
 
-    fn print_statement(&mut self) -> Result<(), CompileError<'a>> {
+    fn print_statement(&mut self) -> Result<'a, ()> {
         self.expression()?;
         self.consume(TokenKind::Semicolon, "Expected ';' at the end of statement")?;
         self.emit_opcode(OpCode::Print);
@@ -487,7 +516,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         Ok(())
     }
 
-    fn block(&mut self) -> Result<(), CompileError<'a>> {
+    fn block(&mut self) -> Result<'a, ()> {
         loop {
             match self.curr_token.kind {
                 TokenKind::RightBrace => {
@@ -505,7 +534,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
     }
 
-    fn if_stmt(&mut self) -> Result<(), CompileError<'a>> {
+    fn if_stmt(&mut self) -> Result<'a, ()> {
         self.consume(TokenKind::LeftParen, "Expected '('")?;
         // compile the condition
         self.expression()?;
@@ -537,8 +566,10 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.patch_jump(else_jump)
     }
 
-    fn while_stmt(&mut self) -> Result<(), CompileError<'a>> {
+    fn while_stmt(&mut self) -> Result<'a, ()> {
         let loop_start = self.chunk.code.len();
+
+        self.begin_loop(loop_start);
 
         self.consume(TokenKind::LeftParen, "Expected '('")?;
         // compile the condition
@@ -554,12 +585,13 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
         self.emit_loop(loop_start)?;
         self.patch_jump(exit_jump)?;
-
+        
         self.emit_opcode(OpCode::Pop);
+        self.end_loop()?;
         Ok(())
     }
 
-    fn for_stmt(&mut self) -> Result<(), CompileError<'a>> {
+    fn for_stmt(&mut self) -> Result<'a, ()> {
         // start a new scope for the initializer
         self.begin_scope();
 
@@ -612,9 +644,10 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
         self.consume(TokenKind::RightParen, "Expected ')'")?;
 
+        self.begin_loop(loop_start);
+
         // compile the body
         self.statement()?;
-
         // append a jump back to the start of the loop
         self.emit_loop(loop_start)?;
 
@@ -625,11 +658,12 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             self.emit_opcode(OpCode::Pop);
         }
 
+        self.end_loop()?;
         self.end_scope();
         Ok(())
     }
 
-    fn expression_statement(&mut self) -> Result<(), CompileError<'a>> {
+    fn expression_statement(&mut self) -> Result<'a, ()> {
         self.expression()?;
         self.consume(TokenKind::Semicolon, "Expected ';' at the end of statement")?;
         self.emit_opcode(OpCode::Pop);
@@ -637,17 +671,17 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         Ok(())
     }
 
-    fn expression(&mut self) -> Result<(), CompileError<'a>> {
+    fn expression(&mut self) -> Result<'a, ()> {
         self.parse_precedence(Precedence::Assignment)
     }
 
-    fn variable(&mut self, can_assign: bool) -> Result<(), CompileError<'a>> {
+    fn variable(&mut self, can_assign: bool) -> Result<'a, ()> {
         let name = self.prev_token.lexeme;
         let local_idx = self.resolve_local(name);
 
         // pick local or global ops and final index
         let (get_op, get_op_long, set_op, set_op_long, idx) = if local_idx != -1 {
-            if self.locals[local_idx as usize].depth == -1 {
+            if !self.locals[local_idx as usize].initialized {
                 return Err(CompileError::new(
                     self.prev_token.to_owned(),
                     format!("Cannot use variable '{}' in its own initializer", name),
@@ -693,7 +727,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
     }
 
-    fn number(&mut self, _: bool) -> Result<(), CompileError<'a>> {
+    fn number(&mut self, _: bool) -> Result<'a, ()> {
         match self.prev_token.lexeme.parse::<f64>() {
             Ok(value) => self.emit_opcode_with_constant(
                 OpCode::Constant,
@@ -704,7 +738,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
     }
 
-    fn literal(&mut self, _: bool) -> Result<(), CompileError<'a>> {
+    fn literal(&mut self, _: bool) -> Result<'a, ()> {
         match self.prev_token.kind {
             TokenKind::Nil => {
                 self.emit_opcode(OpCode::Nil);
@@ -725,7 +759,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
     }
 
-    fn string(&mut self, _: bool) -> Result<(), CompileError<'a>> {
+    fn string(&mut self, _: bool) -> Result<'a, ()> {
         match self.prev_token.kind {
             TokenKind::String => {
                 let s = &self.prev_token.lexeme[1..self.prev_token.lexeme.len() - 1];
@@ -744,12 +778,12 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
     }
 
-    fn grouping(&mut self, _: bool) -> Result<(), CompileError<'a>> {
+    fn grouping(&mut self, _: bool) -> Result<'a, ()> {
         self.expression()?;
         self.consume(TokenKind::RightParen, "Expected ')'")
     }
 
-    fn unary(&mut self, _: bool) -> Result<(), CompileError<'a>> {
+    fn unary(&mut self, _: bool) -> Result<'a, ()> {
         let operator_kind = self.prev_token.kind;
 
         // compile the operand
@@ -770,7 +804,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         Ok(())
     }
 
-    fn binary(&mut self, _: bool) -> Result<(), CompileError<'a>> {
+    fn binary(&mut self, _: bool) -> Result<'a, ()> {
         let operator_token = self.prev_token.clone();
         let operator_kind = self.prev_token.kind;
 
@@ -800,7 +834,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         Ok(())
     }
 
-    fn ternary(&mut self, _: bool) -> Result<(), CompileError<'a>> {
+    fn ternary(&mut self, _: bool) -> Result<'a, ()> {
         let operator_kind = self.prev_token.kind;
 
         if let TokenKind::Question = operator_kind {
@@ -823,7 +857,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
     }
 
-    fn logical_or(&mut self, _: bool) -> Result<(), CompileError<'a>> {
+    fn logical_or(&mut self, _: bool) -> Result<'a, ()> {
         let operator_kind = self.prev_token.kind;
 
         if let TokenKind::Or = operator_kind {
@@ -844,7 +878,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
     }
 
-    fn logical_and(&mut self, _: bool) -> Result<(), CompileError<'a>> {
+    fn logical_and(&mut self, _: bool) -> Result<'a, ()> {
         let operator_kind = self.prev_token.kind;
 
         if let TokenKind::And = operator_kind {
@@ -865,7 +899,49 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
     }
 
-    fn parse_precedence(&mut self, precedence: Precedence) -> Result<(), CompileError<'a>> {
+    fn continue_stmt(&mut self) -> Result<'a, ()> {
+        let (loop_start, scope_depth) = if let Some(loop_context) = self.innermost_loop() {
+            (loop_context.loop_start, loop_context.scope_depth)
+        } else {
+            return Err(CompileError::new(
+                self.prev_token.clone(),
+                "Cannot use 'continue' outside of a loop".to_string(),
+            ));
+        };
+
+        self.consume(TokenKind::Semicolon, "Expected ';'")?;
+
+        // pop the locals in the loop body
+        self.emit_pop_scopes(scope_depth);
+
+        // jump back to the start of the loop
+        self.emit_loop(loop_start)
+    }
+
+    fn break_stmt(&mut self) -> Result<'a, ()> {
+        let scope_depth = if let Some(loop_context) = self.innermost_loop() {
+            loop_context.scope_depth
+        } else {
+            return Err(CompileError::new(
+                self.prev_token.clone(),
+                "Cannot use 'break' outside of a loop".to_string(),
+            ));
+        };
+
+        self.consume(TokenKind::Semicolon, "Expected ';'")?;
+        
+        // pop the locals in the loop body
+        self.emit_pop_scopes(scope_depth);
+
+        // emit a jump to the end of the loop
+        let break_jump = self.emit_jump(OpCode::Jump);
+
+        // push the jump to the loop context
+        self.loop_stacks.last_mut().unwrap().break_jumps.push(break_jump);
+        Ok(())
+    }
+
+    fn parse_precedence(&mut self, precedence: Precedence) -> Result<'a, ()> {
         self.advance()?;
 
         let prefix_rule = self.get_rule(self.prev_token.kind).prefix_rule;
@@ -907,7 +983,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
     }
 
-    fn advance(&mut self) -> Result<(), CompileError<'a>> {
+    fn advance(&mut self) -> Result<'a, ()> {
         let token = self.scanner.scan_token();
 
         self.prev_token = self.curr_token.clone();
@@ -920,7 +996,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         Ok(())
     }
 
-    fn consume(&mut self, expected: TokenKind, err: &'a str) -> Result<(), CompileError<'a>> {
+    fn consume(&mut self, expected: TokenKind, err: &'a str) -> Result<'a, ()> {
         if self.check(expected) {
             self.advance()
         } else {
@@ -963,10 +1039,10 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.emit_return();
     }
 
-    /// declare local but set its depth to -1 as a marker for "not initialized"
-    fn declare_local(&mut self, name: &'a str) -> Result<usize, CompileError<'a>> {
+    /// declare local with `initialized` set to false
+    fn declare_local(&mut self, name: &'a str) -> Result<'a, usize> {
         for local in self.locals.iter().rev() {
-            if local.depth != -1 && local.depth < self.curr_depth {
+            if local.depth < self.curr_depth {
                 break;
             }
 
@@ -978,14 +1054,14 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             }
         }
 
-        self.locals.push(Local { name, depth: -1 });
+        self.locals.push(Local::new(name, self.curr_depth, false));
 
         Ok(self.locals.len() - 1)
     }
 
-    /// mark the local as being initialized by setting the depth to current depth
+    /// mark the local as being initialized
     fn mark_as_initialized(&mut self, index: usize) {
-        self.locals[index].depth = self.curr_depth;
+        self.locals[index].initialized = true;
     }
 
     /// returns the index of the first declaration of the given local, -1 otherwise
@@ -1004,12 +1080,13 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.curr_depth += 1;
     }
 
-    /// decreases the current scope depth and pops off all locals in the current scope
+    /// decreases the scope depth to the one below the given depth and
+    /// pops all locals upto (including) that depth
     fn end_scope(&mut self) {
         let mut locals_to_pop = 0;
 
         while let Some(local) = self.locals.last() {
-            if local.depth != self.curr_depth {
+            if local.depth < self.curr_depth {
                 break;
             }
 
@@ -1018,9 +1095,54 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
 
         self.curr_depth -= 1;
+
         // this call won't throw error because declarations would've already done that
         let _ =
             self.emit_opcode_with_num(OpCode::PopN, OpCode::PopNLong, locals_to_pop, "".to_owned());
+    }
+
+    /// emits instruction to pop all locals upto (but excluding) the given depth
+    fn emit_pop_scopes(&mut self, upto_depth: usize) {
+        let mut locals_to_pop = 0;
+        let mut rev_iter = self.locals.iter().rev();
+
+        while let Some(local) = rev_iter.next() {
+            if local.depth <= upto_depth {
+                break;
+            }
+
+            locals_to_pop += 1;
+        }
+
+        // this call won't throw error because declarations would've already done that
+        let _ =
+            self.emit_opcode_with_num(OpCode::PopN, OpCode::PopNLong, locals_to_pop, "".to_owned());
+    }
+
+    /// pushes a new loop context
+    fn begin_loop(&mut self, loop_start: usize) {
+        self.loop_stacks.push(LoopContext {
+            loop_start: loop_start,
+            scope_depth: self.curr_depth,
+            break_jumps: Vec::new(),
+        });
+    }
+
+    /// pops the topmost loop context
+    fn end_loop(&mut self) -> Result<'a, ()> {
+        // patch all the break statements in the loop body
+        let break_jumps = self.loop_stacks.pop().unwrap().break_jumps;
+
+        for jump_offset in break_jumps {
+            self.patch_jump(jump_offset)?;
+        }
+
+        Ok(())
+    }
+
+    /// returns the topmost (innermost) loop context
+    fn innermost_loop(&self) -> Option<&LoopContext> {
+        self.loop_stacks.last()
     }
 
     fn emit_byte(&mut self, byte: u8) {
@@ -1042,7 +1164,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         opcode_long: OpCode,
         num: usize,
         err: String,
-    ) -> Result<(), CompileError<'a>> {
+    ) -> Result<'a, ()> {
         const MAX24BIT: usize = (1 << 24) - 1;
 
         if num <= u8::MAX as usize {
@@ -1063,7 +1185,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         opcode: OpCode,
         opcode_long: OpCode,
         value: Value,
-    ) -> Result<(), CompileError<'a>> {
+    ) -> Result<'a, ()> {
         let index = self.chunk.add_constant(value);
         self.emit_opcode_with_num(
             opcode,
@@ -1080,7 +1202,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.chunk.code.len() - 2
     }
 
-    fn patch_jump(&mut self, offset: usize) -> Result<(), CompileError<'a>> {
+    fn patch_jump(&mut self, offset: usize) -> Result<'a, ()> {
         const BYTE_MASK: usize = (1usize << 8) - 1;
 
         let jump_dist = self.chunk.code.len() - offset - 2; // -2 for the operands
@@ -1097,7 +1219,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
     }
 
-    fn emit_loop(&mut self, loop_start: usize) -> Result<(), CompileError<'a>> {
+    fn emit_loop(&mut self, loop_start: usize) -> Result<'a, ()> {
         // jumps to the start of the loop
         const BYTE_MASK: usize = (1usize << 8) - 1;
 

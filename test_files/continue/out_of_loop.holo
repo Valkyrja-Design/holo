@@ -1,0 +1,8 @@
+continue;
+
+{
+    var a = 0;
+    {
+        continue;
+    }
+}

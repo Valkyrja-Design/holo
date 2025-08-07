@@ -4,7 +4,8 @@ Holo is a small dynamically-typed and interpreted language heavily inspired from
 
 ## TODO
 
-- [ ] Handle multi line expressions like the following properly
+- [ ] refactor and document code
+- [ ] handle multi line expressions like the following properly
 
 ```
 print -
