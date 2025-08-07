@@ -22,6 +22,8 @@ fn if_stmt() {
             continue;
         }
 
+        println!("Running test: {}", path.as_os_str().to_str().unwrap());
+
         let test_name = path.file_name().unwrap().to_string_lossy().to_string();
         let mut output_stream: Vec<u8> = Vec::new();
         let mut err_stream: Vec<u8> = Vec::new();

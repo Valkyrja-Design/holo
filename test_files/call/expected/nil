@@ -1,1 +1,2 @@
-[line 1] Expected a callable: function or class
+Runtime error: Can only call functions and classes
+[line 1] in <main>

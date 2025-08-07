@@ -1,2 +1,3 @@
-[line 2] Runtime error: Undefined variable 'unknown'
+Runtime error: Undefined variable 'unknown'
+[line 2] in <main>
 undefined global

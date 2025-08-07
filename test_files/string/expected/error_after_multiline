@@ -1,1 +1,2 @@
-[line 7] Runtime error: Undefined variable 'err'
+Runtime error: Undefined variable 'err'
+[line 7] in <main>

@@ -1,1 +1,2 @@
-[line 2] Runtime error: Undefined variable 'a'
+Runtime error: Undefined variable 'a'
+[line 2] in <main>

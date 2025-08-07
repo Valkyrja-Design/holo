@@ -1,1 +1,2 @@
-[line 3] Expected 2 arguments but got 1
+Runtime error: Incorrect number of arguments: expected 2, got 1
+[line 3] in <main>

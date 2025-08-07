@@ -1,2 +1,3 @@
-0x55bb81713b40
-0x55bb817137f0
+Runtime error: Undefined variable 'clock'
+[line 4] in <main>
+<fn foo>

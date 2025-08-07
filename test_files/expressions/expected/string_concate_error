@@ -1,1 +1,2 @@
-[line 1] Runtime error: Operands to '+' must be two numbers or strings
+Runtime error: Operands to '+' must be two numbers or strings
+[line 1] in <main>

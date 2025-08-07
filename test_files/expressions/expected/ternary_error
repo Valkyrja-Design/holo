@@ -1,1 +1,2 @@
-[line 1] Runtime error: Expected a boolean as ternary operator predicate
+Runtime error: Expected a boolean as ternary operator predicate
+[line 1] in <main>

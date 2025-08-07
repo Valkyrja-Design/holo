@@ -1,1 +1,2 @@
-[line 260] Error at 'a': More than 255 arguments are not allowed
+[line 259] Error at ',': Cannot have more than 255 arguments
+[line 261] Error at '}': Expected expression

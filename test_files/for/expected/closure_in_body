@@ -1,3 +1,3 @@
-[line 17] Error at '(': Expected ';' at the end of statement
-[line 19] Error at '(': Expected ';' at the end of statement
-[line 21] Error at '(': Expected ';' at the end of statement
+Runtime error: Undefined variable 'i'
+[line 8] in f()
+[line 17] in <main>

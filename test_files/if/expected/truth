@@ -1,2 +1,3 @@
-[line 2] Runtime error: Expected `bool` as condition
+Runtime error: Expected `bool` as condition
+[line 2] in <main>
 false

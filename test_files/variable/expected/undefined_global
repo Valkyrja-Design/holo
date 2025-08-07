@@ -1,1 +1,2 @@
-[line 1] Runtime error: Undefined variable 'notDefined'
+Runtime error: Undefined variable 'notDefined'
+[line 1] in <main>

@@ -135,8 +135,8 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     const RULES: [ParseRule<'a, 'b, W>; 50] = [
         ParseRule {
             prefix_rule: Some(Self::grouping),
-            infix_rule: None,
-            precedence: Precedence::None,
+            infix_rule: Some(Self::call),
+            precedence: Precedence::Call,
         }, // LeftParen
         ParseRule {
             prefix_rule: None,
@@ -628,6 +628,10 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 self.advance()?;
                 self.break_stmt()
             }
+            TokenKind::Return => {
+                self.advance()?;
+                self.return_stmt()
+            }
             _ => self.expression_statement(),
         }
     }
@@ -788,6 +792,24 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         Ok(())
     }
 
+    fn return_stmt(&mut self) -> Result<'a, ()> {
+        if self.contexts.is_empty() {
+            return Err(CompileError::new(
+                self.prev_token.clone(),
+                "'return' statement can only be used inside a function".to_string(),
+            ));
+        }
+
+        if self.check(TokenKind::Semicolon) {
+            self.emit_opcode(OpCode::Nil);
+        } else {
+            self.expression()?;
+        }
+
+        self.emit_opcode(OpCode::Return);
+        self.consume(TokenKind::Semicolon, "Expected ';' at the end of statement")
+    }
+
     fn expression_statement(&mut self) -> Result<'a, ()> {
         self.expression()?;
         self.consume(TokenKind::Semicolon, "Expected ';' at the end of statement")?;
@@ -798,6 +820,49 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
     fn expression(&mut self) -> Result<'a, ()> {
         self.parse_precedence(Precedence::Assignment)
+    }
+
+    fn call(&mut self, _: bool) -> Result<'a, ()> {
+        let arg_count = self.argument_list()?;
+
+        self.emit_opcode(OpCode::Call);
+        self.emit_byte(arg_count);
+
+        Ok(())
+    }
+
+    fn argument_list(&mut self) -> Result<'a, u8> {
+        const MAX_PARAMS: u8 = 255;
+        let mut arity: u8 = 0;
+
+        if !self.check(TokenKind::RightParen) {
+            loop {
+                if arity == MAX_PARAMS {
+                    return Err(CompileError::new(
+                        self.prev_token.clone(),
+                        "Cannot have more than 255 arguments".to_string(),
+                    ));
+                }
+
+                arity += 1;
+                self.expression()?;
+
+                if !self.check(TokenKind::Comma) {
+                    break;
+                }
+
+                // consume the comma
+                self.advance()?;
+            }
+        }
+
+        // consume the closing parenthesis
+        self.consume(
+            TokenKind::RightParen,
+            "Expected ')' after function arguments",
+        )?;
+
+        Ok(arity)
     }
 
     fn variable(&mut self, can_assign: bool) -> Result<'a, ()> {
@@ -1310,6 +1375,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 chunk: Chunk::new(),
             },
         );
+
         // there will always be a saved context
         let saved_context = self.contexts.pop().unwrap();
 
@@ -1338,9 +1404,8 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     }
 
     fn emit_return(&mut self) {
-        let line = self.prev_token.line;
-
-        self.chunk().write_opcode(OpCode::Return, line);
+        self.emit_opcode(OpCode::Nil);
+        self.emit_opcode(OpCode::Return);
     }
 
     fn emit_opcode_with_num(

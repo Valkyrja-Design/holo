@@ -1,4 +1,4 @@
-use crate::disassembler::disassemble;
+use crate::disassembler::{disassemble, disassemble_instr};
 
 use super::{
     chunk::{Chunk, OpCode},
@@ -55,7 +55,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 ip: 0,
                 stack_start: 0,
             },
-            stack: vec![],
+            stack: Vec::new(),
             gc,
             str_intern_table,
             globals: vec![None; global_var_names.len()],
@@ -66,8 +66,6 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
     }
 
     pub fn run(&mut self) -> InterpretResult {
-        self.current_frame = self.call_stack.last().unwrap().clone();
-
         loop {
             match self.read_opcode() {
                 OpCode::Constant => {
@@ -88,7 +86,23 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     self.stack.push(Value::Bool(false));
                 }
                 OpCode::Return => {
-                    return InterpretResult::Ok;
+                    // pop off the return value
+                    let ret = self.stack.pop().unwrap();
+
+                    // pop off the current frame
+                    self.call_stack.pop();
+
+                    // if the call stack is empty, we're done
+                    // (we added an implicit return for the main function)
+                    if self.call_stack.is_empty() {
+                        return InterpretResult::Ok;
+                    }
+
+                    // otherwise, pop off the arguments and the callee from the stack,
+                    // push the return value and set the current frame to the top of the call stack
+                    self.stack.truncate(self.current_frame.stack_start - 1);
+                    self.stack.push(ret);
+                    self.current_frame = self.call_stack.last().unwrap().clone();
                 }
                 OpCode::Negate => match self.stack.last_mut() {
                     Some(Value::Number(value)) => *value = -*value,
@@ -355,8 +369,63 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
 
                     *self.ip_as_mut() -= jump_offset;
                 }
+                OpCode::Call => {
+                    let arg_count = self.read_int8() as u8;
+
+                    // before setting the current frame to the new call frame
+                    // we need to write back the current ip to the current frame on the call stack
+                    self.call_stack.last_mut().unwrap().ip = self.current_frame.ip;
+
+                    if self.call_value(arg_count) != InterpretResult::Ok {
+                        return InterpretResult::RuntimeError;
+                    }
+
+                    // set the current frame to the top of the call stack
+                    self.current_frame = self.call_stack.last().unwrap().clone();
+                }
             }
         }
+    }
+
+    fn call_value(&mut self, arg_count: u8) -> InterpretResult {
+        if self.stack.len() < (arg_count as usize) + 1 {
+            return InterpretResult::RuntimeError;
+        }
+
+        let callee = self.stack[self.stack.len() - (arg_count as usize) - 1];
+
+        match callee {
+            Value::Object(func_ptr) => {
+                let function = unsafe {
+                    // SAFETY: we only ever use GC allocated pointers which are
+                    // made sure to be valid by the GC
+                    match &*func_ptr {
+                        Object::Func(func) => func,
+                        _ => return self.runtime_error("Can only call functions and classes"),
+                    }
+                };
+
+                self.call(func_ptr, function.arity, arg_count)
+            }
+            _ => self.runtime_error("Can only call functions and classes"),
+        }
+    }
+
+    fn call(&mut self, function: *mut Object, arity: u8, arg_count: u8) -> InterpretResult {
+        if arity != arg_count {
+            return self.runtime_error(&format!(
+                "Incorrect number of arguments: expected {}, got {}",
+                arity, arg_count
+            ));
+        }
+
+        self.call_stack.push(CallFrame {
+            function,
+            ip: 0,
+            stack_start: self.stack.len() - (arg_count as usize),
+        });
+
+        InterpretResult::Ok
     }
 
     fn define_global(&mut self, index: usize) -> InterpretResult {
@@ -506,7 +575,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         }
     }
 
-    fn ip(&mut self) -> usize {
+    fn ip(&self) -> usize {
         self.current_frame.ip
     }
 
@@ -560,9 +629,32 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
     }
 
     fn runtime_error(&mut self, err: &str) -> InterpretResult {
-        let instr = self.ip() - 1;
-        let line = self.chunk().get_line_of(instr);
-        let _ = writeln!(self.err_stream, "[line {line}] Runtime error: {err}");
+        // we have to write back the current ip to the current call frame on the call stack
+        self.call_stack.last_mut().unwrap().ip = self.current_frame.ip;
+
+        let _ = writeln!(self.err_stream, "Runtime error: {err}");
+        let rev_frame_iter = self.call_stack.iter().rev();
+
+        for frame in rev_frame_iter {
+            let function = unsafe {
+                // SAFETY: we only ever use GC allocated pointers which are
+                // made sure to be valid by the GC
+                match &*frame.function {
+                    Object::Func(func) => func,
+                    _ => unreachable!(),
+                }
+            };
+
+            let instr = frame.ip - 1;
+            let line = function.chunk.get_line_of(instr);
+            let function_name = if function.name == "<main>" {
+                "<main>".to_string()
+            } else {
+                format!("{}()", function.name)
+            };
+
+            let _ = writeln!(self.err_stream, "[line {}] in {}", line, function_name);
+        }
 
         InterpretResult::RuntimeError
     }

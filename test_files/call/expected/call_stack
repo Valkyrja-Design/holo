@@ -1,0 +1,5 @@
+Runtime error: Incorrect number of arguments: expected 0, got 2
+[line 4] in c()
+[line 2] in b()
+[line 1] in a()
+[line 7] in <main>

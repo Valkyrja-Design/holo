@@ -53,6 +53,7 @@ pub fn disassemble_instr(chunk: &Chunk, offset: usize) -> usize {
         OpCode::JumpIfTrue => unary_instr16(chunk, "JUMP_IF_TRUE", offset),
         OpCode::Jump => unary_instr16(chunk, "JUMP", offset),
         OpCode::Loop => unary_instr16(chunk, "LOOP", offset),
+        OpCode::Call => unary_instr8(chunk, "CALL", offset),
     }
 }
 

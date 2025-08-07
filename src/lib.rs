@@ -59,5 +59,6 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::interpret;
     use std::io::{stderr, stdout};
 }

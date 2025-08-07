@@ -1,1 +1,2 @@
-[line 2] Runtime error: Operand to '!' must be a bool
+Runtime error: Operand to '!' must be a bool
+[line 2] in <main>
