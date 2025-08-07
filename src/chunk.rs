@@ -195,7 +195,7 @@ impl Chunk {
         let b = bytes[1] as usize;
         let c = bytes[2] as usize;
 
-        (a << 16) + (b << 8) + c
+        (a << 16) | (b << 8) | c
     }
 
     pub fn get_line_of(&self, byte_idx: usize) -> usize {
