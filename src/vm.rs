@@ -4,25 +4,13 @@ use super::{
     table::StringInternTable,
     value::{Closure, Function, Upvalue, Value},
 };
-use crate::disassembler::{disassemble, disassemble_instr};
-use arrayvec::{ArrayVec, Drain};
-use std::{
-    io::Write,
-    ops::{Index, IndexMut},
-};
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum InterpretResult {
-    Ok,
-    CompileError,
-    RuntimeError,
-}
+use std::io::Write;
 
 #[derive(Clone, Copy)]
 struct CallFrame {
-    closure: *mut Closure, // current closure being executed
-    ip: usize,             // instruction pointer
-    stack_start: usize,    // index of the first element of the stack for this frame
+    closure: *mut Closure, // Current closure being executed
+    ip: usize,             // Instruction pointer
+    stack_start: usize,    // Index of the first element of the stack for this frame
 }
 
 struct OpenUpvalue {
@@ -30,13 +18,13 @@ struct OpenUpvalue {
     upvalue: *mut Upvalue,
 }
 
-static ARRAY_SIZE: usize = 256; // default array size
+static VEC_SIZE: usize = 1024; // Default vec size
 
 pub struct VM<'a, T: Write, U: Write> {
     call_stack: Vec<CallFrame>,
     current_frame: CallFrame,
-    stack: ArrayVec<Value, ARRAY_SIZE>,
-    open_upvalues: ArrayVec<OpenUpvalue, ARRAY_SIZE>,
+    stack: Vec<Value>,
+    open_upvalues: Vec<OpenUpvalue>,
     gc: gc::GC,
     str_intern_table: StringInternTable,
     globals: Vec<Option<Value>>, // None means the variable is undefined
@@ -66,8 +54,8 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 ip: 0,
                 stack_start: 0,
             },
-            stack: ArrayVec::new(),
-            open_upvalues: ArrayVec::new(),
+            stack: Vec::with_capacity(VEC_SIZE),
+            open_upvalues: Vec::with_capacity(VEC_SIZE),
             gc,
             str_intern_table,
             globals,
@@ -77,103 +65,79 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         }
     }
 
-    pub fn run(&mut self) -> InterpretResult {
-        disassemble(self.chunk(), "main");
-
+    pub fn run(&mut self) -> Option<()> {
         loop {
             match self.read_opcode() {
                 OpCode::Constant => {
                     let constant = self.read_constant();
-                    self.stack.push(constant);
+                    self.push(constant);
                 }
                 OpCode::ConstantLong => {
                     let constant = self.read_constant_long();
-                    self.stack.push(constant);
+                    self.push(constant);
                 }
                 OpCode::Nil => {
-                    self.stack.push(Value::Nil);
+                    self.push(Value::Nil);
                 }
                 OpCode::True => {
-                    self.stack.push(Value::Bool(true));
+                    self.push(Value::Bool(true));
                 }
                 OpCode::False => {
-                    self.stack.push(Value::Bool(false));
+                    self.push(Value::Bool(false));
                 }
                 OpCode::Return => {
-                    // pop off the return value
+                    // Pop off the return value
                     let ret = self.stack.pop().unwrap();
 
-                    // pop off the current frame
+                    // Pop off the current frame
                     self.call_stack.pop();
 
-                    // if the call stack is empty, we're done
+                    // If the call stack is empty, we're done
                     // (we added an implicit return for the main function)
                     if self.call_stack.is_empty() {
-                        return InterpretResult::Ok;
+                        return Some(());
                     }
 
-                    // close upvalues for the current frame
+                    // Close upvalues for the current frame
                     self.close_upvalues(self.current_frame.stack_start);
 
-                    // otherwise, pop off the arguments and the callee from the stack,
+                    // Otherwise, pop off the arguments and the callee from the stack,
                     // push the return value and set the current frame to the top of the call stack
                     self.stack.truncate(self.current_frame.stack_start - 1);
-                    self.stack.push(ret);
+                    self.push(ret);
                     self.current_frame = self.call_stack.last().unwrap().clone();
                 }
                 OpCode::Negate => match self.stack.last_mut() {
                     Some(Value::Number(value)) => *value = -*value,
                     Some(_) => {
-                        return self.runtime_error("Operand to '-' must be a number");
+                        self.runtime_error("Operand to '-' must be a number");
+                        return None;
                     }
                     _ => {
-                        return InterpretResult::RuntimeError;
+                        return None;
                     }
                 },
                 OpCode::Not => match self.stack.last_mut() {
                     Some(Value::Bool(value)) => *value = !*value,
                     Some(_) => {
-                        return self.runtime_error("Operand to '!' must be a bool");
+                        self.runtime_error("Operand to '!' must be a bool");
+                        return None;
                     }
                     _ => {
-                        return InterpretResult::RuntimeError;
+                        return None;
                     }
                 },
-                OpCode::Add => {
-                    if self.binary_add() == InterpretResult::Ok {
-                        continue;
-                    }
-
-                    return InterpretResult::RuntimeError;
-                }
+                OpCode::Add => self.binary_add()?,
                 OpCode::Sub => {
-                    if self.binary_number_op(|l, r| *l -= r, "Operands to '-' must be numbers")
-                        == InterpretResult::Ok
-                    {
-                        continue;
-                    }
-
-                    return InterpretResult::RuntimeError;
+                    self.binary_number_op(|l, r| *l -= r, "Operands to '-' must be numbers")?
                 }
                 OpCode::Mult => {
-                    if self.binary_number_op(|l, r| *l *= r, "Operands to '*' must be numbers")
-                        == InterpretResult::Ok
-                    {
-                        continue;
-                    }
-
-                    return InterpretResult::RuntimeError;
+                    self.binary_number_op(|l, r| *l *= r, "Operands to '*' must be numbers")?
                 }
-                OpCode::Divide => {
-                    if self.binary_divide() == InterpretResult::Ok {
-                        continue;
-                    }
-
-                    return InterpretResult::RuntimeError;
-                }
+                OpCode::Divide => self.binary_divide()?,
                 OpCode::Equal => {
                     if self.stack.len() < 2 {
-                        return InterpretResult::RuntimeError;
+                        return None;
                     }
 
                     let right = self.stack.pop().unwrap();
@@ -183,7 +147,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 }
                 OpCode::NotEqual => {
                     if self.stack.len() < 2 {
-                        return InterpretResult::RuntimeError;
+                        return None;
                     }
 
                     let right = self.stack.pop().unwrap();
@@ -193,7 +157,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 }
                 OpCode::Greater => {
                     if self.stack.len() < 2 {
-                        return InterpretResult::RuntimeError;
+                        return None;
                     }
 
                     let right = self.stack.pop().unwrap();
@@ -203,7 +167,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 }
                 OpCode::GreaterEqual => {
                     if self.stack.len() < 2 {
-                        return InterpretResult::RuntimeError;
+                        return None;
                     }
 
                     let right = self.stack.pop().unwrap();
@@ -213,7 +177,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 }
                 OpCode::Less => {
                     if self.stack.len() < 2 {
-                        return InterpretResult::RuntimeError;
+                        return None;
                     }
 
                     let right = self.stack.pop().unwrap();
@@ -223,7 +187,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 }
                 OpCode::LessEqual => {
                     if self.stack.len() < 2 {
-                        return InterpretResult::RuntimeError;
+                        return None;
                     }
 
                     let right = self.stack.pop().unwrap();
@@ -233,7 +197,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 }
                 OpCode::Ternary => {
                     if self.stack.len() < 3 {
-                        return InterpretResult::RuntimeError;
+                        return None;
                     }
 
                     let else_value = self.stack.pop().unwrap();
@@ -249,68 +213,56 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                             }
                         }
                         _ => {
-                            return self
-                                .runtime_error("Expected a boolean as ternary operator predicate");
+                            self.runtime_error("Expected a boolean as ternary operator predicate");
+                            return None;
                         }
                     }
                 }
                 OpCode::Print => {
                     if self.stack.is_empty() {
-                        return InterpretResult::RuntimeError;
+                        return None;
                     }
 
                     let _ = writeln!(self.output_stream, "{}", self.stack.pop().unwrap());
                 }
                 OpCode::Pop => {
                     if self.stack.is_empty() {
-                        return InterpretResult::RuntimeError;
+                        return None;
                     }
 
                     self.stack.pop();
                 }
                 OpCode::DefineGlobal => {
-                    // IMP: lookout for GC here
+                    // IMP: Lookout for GC here
                     let index: usize = self.read_int8();
 
-                    if self.define_global(index) != InterpretResult::Ok {
-                        return InterpretResult::RuntimeError;
-                    }
+                    self.define_global(index)?
                 }
                 OpCode::DefineGlobalLong => {
-                    // IMP: lookout for GC here
+                    // IMP: Lookout for GC here
                     let index = self.read_int24();
 
-                    if self.define_global(index) != InterpretResult::Ok {
-                        return InterpretResult::RuntimeError;
-                    }
+                    self.define_global(index)?
                 }
                 OpCode::GetGlobal => {
                     let index = self.read_int8();
 
-                    if self.get_global(index) != InterpretResult::Ok {
-                        return InterpretResult::RuntimeError;
-                    }
+                    self.get_global(index)?
                 }
                 OpCode::GetGlobalLong => {
                     let index = self.read_int24();
 
-                    if self.get_global(index) != InterpretResult::Ok {
-                        return InterpretResult::RuntimeError;
-                    }
+                    self.get_global(index)?
                 }
                 OpCode::SetGlobal => {
                     let index = self.read_int8();
 
-                    if self.set_global(index) != InterpretResult::Ok {
-                        return InterpretResult::RuntimeError;
-                    }
+                    self.set_global(index)?
                 }
                 OpCode::SetGlobalLong => {
                     let index = self.read_int24();
 
-                    if self.set_global(index) != InterpretResult::Ok {
-                        return InterpretResult::RuntimeError;
-                    }
+                    self.set_global(index)?
                 }
                 OpCode::GetLocal => {
                     let index = self.read_int8();
@@ -325,16 +277,12 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 OpCode::SetLocal => {
                     let index = self.read_int8();
 
-                    if self.set_local(index) != InterpretResult::Ok {
-                        return InterpretResult::RuntimeError;
-                    }
+                    self.set_local(index)?
                 }
                 OpCode::SetLocalLong => {
                     let index = self.read_int24();
 
-                    if self.set_local(index) != InterpretResult::Ok {
-                        return InterpretResult::RuntimeError;
-                    }
+                    self.set_local(index)?
                 }
                 OpCode::PopN => {
                     let n = self.read_int8();
@@ -356,7 +304,8 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                             }
                         }
                         Some(_) => {
-                            return self.runtime_error("Expected `bool` as condition");
+                            self.runtime_error("Expected `bool` as condition");
+                            return None;
                         }
                         _ => unreachable!("No value in the stack"),
                     }
@@ -371,7 +320,8 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                             }
                         }
                         Some(_) => {
-                            return self.runtime_error("Expected `bool` as condition");
+                            self.runtime_error("Expected `bool` as condition");
+                            return None;
                         }
                         _ => unreachable!("No value in the stack"),
                     }
@@ -389,9 +339,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 OpCode::Call => {
                     let arg_count = self.read_int8() as u8;
 
-                    if self.call_value(arg_count) != InterpretResult::Ok {
-                        return InterpretResult::RuntimeError;
-                    }
+                    self.call_value(arg_count)?
                 }
                 OpCode::Closure => {
                     let constant = self.read_constant();
@@ -407,10 +355,10 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                         &mut *closure_ptr
                     };
 
-                    // push the closure first so that it can be captured by upvalues
-                    self.stack.push(Value::Closure(closure_ptr));
+                    // Push the closure first so that it can be captured by upvalues
+                    self.push(Value::Closure(closure_ptr));
 
-                    // initialize the upvalues
+                    // Initialize the upvalues
                     for i in 0..upvalue_count {
                         let is_local = self.read_byte() == 1;
                         let index = self.read_byte() as usize;
@@ -434,7 +382,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     unsafe {
                         // SAFETY: Upvalue pointers are allocated by GC and remain valid
                         // for the lifetime of the GC which outlives all Value references
-                        self.stack.push(*(*upvalue).location)
+                        self.push(*(*upvalue).location);
                     }
                 }
                 OpCode::GetUpvalueLong => {
@@ -462,9 +410,9 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         }
     }
 
-    fn call_value(&mut self, arg_count: u8) -> InterpretResult {
+    fn call_value(&mut self, arg_count: u8) -> Option<()> {
         if self.stack.len() < (arg_count as usize) + 1 {
-            return InterpretResult::RuntimeError;
+            return None;
         }
 
         let callee = self.stack[self.stack.len() - (arg_count as usize) - 1];
@@ -491,28 +439,33 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     Ok(value) => {
                         self.stack
                             .truncate(self.stack.len() - (arg_count as usize) - 1);
-                        self.stack.push(value);
-                        return InterpretResult::Ok;
+                        self.push(value);
+                        Some(())
                     }
                     Err(err) => {
-                        return self.runtime_error(&err);
+                        self.runtime_error(&err);
+                        None
                     }
                 }
             }
-            _ => self.runtime_error("Can only call functions and classes"),
+            _ => {
+                self.runtime_error("Can only call functions and classes");
+                None
+            }
         }
     }
 
-    fn call(&mut self, closure: *mut Closure, arity: u8, arg_count: u8) -> InterpretResult {
+    fn call(&mut self, closure: *mut Closure, arity: u8, arg_count: u8) -> Option<()> {
         if arity != arg_count {
-            return self.runtime_error(&format!(
+            self.runtime_error(&format!(
                 "Incorrect number of arguments: expected {}, got {}",
                 arity, arg_count
             ));
+            return None;
         }
 
-        // before setting the current frame to the new call frame
-        // we need to write back the current ip to the current frame on the call stack
+        // Before setting the current frame to the new call frame we need to
+        // write back the current ip to the current frame on the call stack
         self.call_stack.last_mut().unwrap().ip = self.current_frame.ip;
         self.call_stack.push(CallFrame {
             closure,
@@ -520,43 +473,46 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
             stack_start: self.stack.len() - (arg_count as usize),
         });
 
-        // set the current frame to the top of the call stack
+        // Set the current frame to the top of the call stack
         self.current_frame = self.call_stack.last().unwrap().clone();
-        InterpretResult::Ok
+        Some(())
     }
 
-    fn define_global(&mut self, index: usize) -> InterpretResult {
+    fn define_global(&mut self, index: usize) -> Option<()> {
         if self.stack.len() < 1 {
-            return InterpretResult::RuntimeError;
+            return None;
         }
 
         let initializer = self.stack.pop().unwrap();
 
-        // don't care what the current value is
+        // Don't care what the current value is
         match self.globals.get_mut(index) {
             Some(value) => {
                 *value = Some(initializer);
-                InterpretResult::Ok
+                Some(())
             }
             _ => unreachable!("No global variable at index {}", index),
         }
     }
 
-    fn get_global(&mut self, index: usize) -> InterpretResult {
+    fn get_global(&mut self, index: usize) -> Option<()> {
         match self.globals.get(index) {
             Some(Some(value)) => {
-                self.stack.push(*value);
-                InterpretResult::Ok
+                self.push(*value);
+                Some(())
             }
-            _ => self.runtime_error(
-                format!("Undefined variable '{}'", self.global_var_names[index]).as_str(),
-            ),
+            _ => {
+                self.runtime_error(
+                    format!("Undefined variable '{}'", self.global_var_names[index]).as_str(),
+                );
+                None
+            }
         }
     }
 
-    fn set_global(&mut self, index: usize) -> InterpretResult {
+    fn set_global(&mut self, index: usize) -> Option<()> {
         if self.stack.len() < 1 {
-            return InterpretResult::RuntimeError;
+            return None;
         }
 
         let to = self.stack.pop().unwrap();
@@ -564,38 +520,41 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         match self.globals.get_mut(index) {
             Some(Some(value)) => {
                 *value = to;
-                self.stack.push(to);
-                InterpretResult::Ok
+                self.push(to);
+                Some(())
             }
-            _ => self.runtime_error(
-                format!("Undefined variable '{}'", self.global_var_names[index]).as_str(),
-            ),
+            _ => {
+                self.runtime_error(
+                    format!("Undefined variable '{}'", self.global_var_names[index]).as_str(),
+                );
+                None
+            }
         }
     }
 
     fn get_local(&mut self, index: usize) {
-        // index is relative to the current frame
+        // Index is relative to the current frame
         let abs_index = self.current_frame.stack_start + index;
-        self.stack.push(self.stack[abs_index]);
+        self.push(self.stack[abs_index]);
     }
 
-    fn set_local(&mut self, index: usize) -> InterpretResult {
+    fn set_local(&mut self, index: usize) -> Option<()> {
         if self.stack.len() < 1 {
-            return InterpretResult::RuntimeError;
+            return None;
         }
 
-        // index is relative to the current frame
+        // Index is relative to the current frame
         let abs_index = self.current_frame.stack_start + index;
         self.stack[abs_index] = *self.stack.last().unwrap();
-        InterpretResult::Ok
+        Some(())
     }
 
-    fn binary_number_op<F>(&mut self, op: F, err: &str) -> InterpretResult
+    fn binary_number_op<F>(&mut self, op: F, err: &str) -> Option<()>
     where
         F: FnOnce(&mut f64, f64),
     {
         if self.stack.len() < 2 {
-            return InterpretResult::RuntimeError;
+            return None;
         }
 
         let right = self.stack.pop().unwrap();
@@ -604,15 +563,18 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         match (left, right) {
             (Value::Number(left), Value::Number(right)) => {
                 op(left, right);
-                InterpretResult::Ok
+                Some(())
             }
-            _ => self.runtime_error(err),
+            _ => {
+                self.runtime_error(err);
+                None
+            }
         }
     }
 
-    fn binary_add(&mut self) -> InterpretResult {
+    fn binary_add(&mut self) -> Option<()> {
         if self.stack.len() < 2 {
-            return InterpretResult::RuntimeError;
+            return None;
         }
 
         let right = self.stack.pop().unwrap();
@@ -621,7 +583,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         match (left, right) {
             (Value::Number(left), Value::Number(right)) => {
                 *left += right;
-                InterpretResult::Ok
+                Some(())
             }
             (Value::String(left), Value::String(right)) => unsafe {
                 // SAFETY: String pointers are allocated by GC and remain valid
@@ -634,36 +596,45 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 *left = self
                     .str_intern_table
                     .intern_owned(concatenated_str, &mut self.gc);
-                InterpretResult::Ok
+                Some(())
             },
-            _ => self.runtime_error("Operands to '+' must be two numbers or strings"),
+            _ => {
+                self.runtime_error("Operands to '+' must be two numbers or strings");
+                None
+            }
         }
     }
 
-    fn binary_divide(&mut self) -> InterpretResult {
+    fn binary_divide(&mut self) -> Option<()> {
         if self.stack.len() < 2 {
-            return InterpretResult::RuntimeError;
+            return None;
         }
 
         let right = self.stack.pop().unwrap();
         let left = self.stack.last_mut().unwrap();
 
         match (left, right) {
-            (Value::Number(_), Value::Number(0.0)) => self.runtime_error("Division by 0"),
+            (Value::Number(_), Value::Number(0.0)) => {
+                self.runtime_error("Division by 0");
+                None
+            }
             (Value::Number(left), Value::Number(right)) => {
                 *left /= right;
-                InterpretResult::Ok
+                Some(())
             }
-            _ => self.runtime_error("Operands to '/' must be numbers"),
+            _ => {
+                self.runtime_error("Operands to '/' must be numbers");
+                None
+            }
         }
     }
 
-    /// captures the local at the given index for the current frame
+    /// Captures the local at the given index for the current frame
     fn capture_local(&mut self, index: usize) -> *mut Upvalue {
         let abs_index = self.current_frame.stack_start + index;
         let location = &mut self.stack[abs_index] as *mut Value;
 
-        // search for an existing upvalue for this local, our `open_upvalues` array
+        // Search for an existing upvalue for this local, our `open_upvalues` array
         // is sorted by stack index, so we can use binary search
         match self
             .open_upvalues
@@ -687,20 +658,20 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         }
     }
 
-    /// closes all open upvalues that are above the given stack index
+    /// Closes all open upvalues that are above the given stack index
     fn close_upvalues(&mut self, stack_index: usize) {
-        // find the first open value that needs to be closed
+        // Find the first open value that needs to be closed
         let pos = self
             .open_upvalues
             .partition_point(|upvalue| upvalue.stack_index < stack_index);
 
-        // close them
+        // Close them
         for upvalue in self.open_upvalues.drain(pos..) {
             unsafe {
                 // SAFETY: Upvalue pointers are allocated by GC and remain valid
                 // for the lifetime of the GC which outlives all Value references
 
-                // move the stack value to the upvalue's closed field
+                // Move the stack value to the upvalue's closed field
                 // and set the upvalue's location to the closed field
                 let upvalue = &mut *upvalue.upvalue;
 
@@ -710,7 +681,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         }
     }
 
-    // TRY: stash the current frame's chunk in a local variable
+    // TRY: Stash the current frame's chunk in a local variable
     fn chunk(&self) -> &Chunk {
         unsafe {
             // SAFETY: Closure function pointers are allocated by GC and remain valid
@@ -733,6 +704,18 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
             // for the lifetime of the GC which outlives all Closure references
             &(*self.current_frame.closure).upvalues
         }
+    }
+
+    fn push(&mut self, value: Value) -> Option<()> {
+        if self.stack.len() >= VEC_SIZE {
+            self.runtime_error(
+                format!("Stack overflow: maximum stack size is {}", VEC_SIZE).as_str(),
+            );
+            return None;
+        }
+
+        self.stack.push(value);
+        Some(())
     }
 
     fn read_opcode(&mut self) -> OpCode {
@@ -780,8 +763,8 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         ret
     }
 
-    fn runtime_error(&mut self, err: &str) -> InterpretResult {
-        // we have to write back the current ip to the current call frame on the call stack
+    fn runtime_error(&mut self, err: &str) {
+        // We have to write back the current ip to the current call frame on the call stack
         self.call_stack.last_mut().unwrap().ip = self.current_frame.ip;
 
         let _ = writeln!(self.err_stream, "Runtime error: {err}");
@@ -804,7 +787,5 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
 
             let _ = writeln!(self.err_stream, "[line {}] in {}", line, function_name);
         }
-
-        InterpretResult::RuntimeError
     }
 }

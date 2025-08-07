@@ -95,9 +95,9 @@ struct ParseRule<'a, 'b, W: Write> {
 }
 
 struct LoopContext {
-    loop_start: usize, // start offset of the loop bytecode (condition or the update expression)
-    scope_depth: usize, // scope depth at the start of the loop
-    break_jumps: Vec<usize>, // jump statements to patch to the end of the loop
+    loop_start: usize, // Start offset of the loop bytecode (condition or the update expression)
+    scope_depth: usize, // Scope depth at the start of the loop
+    break_jumps: Vec<usize>, // Jump statements to patch to the end of the loop
 }
 
 struct Upvalue {
@@ -114,22 +114,21 @@ struct CompilerContext<'a> {
 }
 
 pub struct Compiler<'a, 'b, W: Write> {
-    source: &'a str,
     scanner: Scanner<'a>,
     curr_token: Token<'a>,
     prev_token: Token<'a>,
 
-    // current compilation context
+    // Current compilation context
     function: Function,
     locals: Vec<Local<'a>>,
     curr_depth: usize,
     loop_contexts: Vec<LoopContext>,
     upvalues: Vec<Upvalue>,
 
-    // saved contexts for nested functions
+    // Saved contexts for nested functions
     contexts: Vec<CompilerContext<'a>>,
 
-    // shared state
+    // Shared state
     gc: &'b mut GC,
     str_intern_table: &'b mut StringInternTable,
     sym_table: &'b mut SymbolTable<'a>,
@@ -400,7 +399,6 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         err_stream: &'b mut W,
     ) -> Self {
         Compiler {
-            source,
             scanner: Scanner::new(source),
             curr_token: Token {
                 kind: TokenKind::Eof,
@@ -435,7 +433,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         if let Err(err) = self.advance() {
             self.report_err(err);
 
-            // synchronize the parser state
+            // Synchronize the parser state
             self.synchronize();
         }
 
@@ -443,7 +441,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             if let Err(err) = self.declaration() {
                 self.report_err(err);
 
-                // synchronize the parser state
+                // Synchronize the parser state
                 self.synchronize();
             }
         }
@@ -475,7 +473,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             self.sym_table.declare(name)
         };
 
-        // consume the initializer, if any
+        // Consume the initializer, if any
         if self.check(TokenKind::Equal) {
             self.advance()?;
             self.expression()?;
@@ -510,7 +508,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
         let name = self.prev_token.lexeme;
 
-        // declare the function name in the current scope
+        // Declare the function name in the current scope
         let index = if self.curr_depth > 0 {
             let index = self.declare_local(name)?;
             self.mark_as_initialized(index);
@@ -519,38 +517,38 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             self.sym_table.declare(name)
         };
 
-        // save the current context
+        // Save the current context
         self.push_context(name);
 
-        // compile the function body
+        // Compile the function body
         self.function()?;
 
-        // restore the previous context
+        // Restore the previous context
         let upvalues = std::mem::replace(&mut self.upvalues, Vec::new());
         let mut function = self.pop_context();
 
-        // fill in the upvalue count
+        // Fill in the upvalue count
         function.upvalue_count = upvalues.len();
 
-        // allocate the function using the new direct allocation
+        // Allocate the function using the new direct allocation
         let func_value = self.gc.alloc_function(function);
 
-        // emit a `Closure` instruction to wrap the function at runtime
+        // Emit a `Closure` instruction to wrap the function at runtime
         self.emit_opcode_with_constant(OpCode::Closure, OpCode::ClosureLong, func_value)?;
 
-        // emit the upvalues
+        // Emit the upvalues
         for upvalue in upvalues {
             self.emit_byte(if upvalue.is_local { 1 } else { 0 });
             // FIXME: `upvalue.index` can be bigger than `u8::MAX`
             self.emit_byte(upvalue.index as u8);
         }
 
-        // define it as a variable
+        // Define it as a variable
         if self.curr_depth > 0 {
-            // local variable
+            // Local variable
             Ok(())
         } else {
-            // global variable
+            // Global variable
             self.emit_opcode_with_num(
                 OpCode::DefineGlobal,
                 OpCode::DefineGlobalLong,
@@ -566,7 +564,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
         self.begin_scope();
 
-        // compile the parameter list
+        // Compile the parameter list
         self.consume(TokenKind::LeftParen, "Expected '(' after function name")?;
 
         let mut arity: u8 = 0;
@@ -601,11 +599,11 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             "Expected ')' after function parameters",
         )?;
 
-        // compile the body
+        // Compile the body
         self.consume(TokenKind::LeftBrace, "Expected '{' before function body")?;
         self.block()?;
 
-        // implicit return
+        // Implicit return
         self.emit_return();
         Ok(())
     }
@@ -679,33 +677,33 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
     fn if_stmt(&mut self) -> Result<'a, ()> {
         self.consume(TokenKind::LeftParen, "Expected '('")?;
-        // compile the condition
+        // Compile the condition
         self.expression()?;
         self.consume(TokenKind::RightParen, "Expected ')'")?;
 
         let then_jump = self.emit_jump(OpCode::JumpIfFalse);
 
-        // pop the condition
+        // Pop the condition
         self.emit_opcode(OpCode::Pop);
-        // compile the block
+        // Compile the block
         self.statement()?;
 
-        // to skip the `else` block after executing the `if` block
+        // To skip the `else` block after executing the `if` block
         let else_jump = self.emit_jump(OpCode::Jump);
 
         // `else` branch starts now
         self.patch_jump(then_jump)?;
 
-        // pop the condition in the `else` branch
+        // Pop the condition in the `else` branch
         self.emit_opcode(OpCode::Pop);
 
-        // compile the `else` branch if present
+        // Compile the `else` branch if present
         if self.check(TokenKind::Else) {
             self.advance()?;
             self.statement()?;
         }
 
-        // end of `else` branch
+        // End of `else` branch
         self.patch_jump(else_jump)
     }
 
@@ -715,15 +713,15 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.begin_loop(loop_start);
 
         self.consume(TokenKind::LeftParen, "Expected '('")?;
-        // compile the condition
+        // Compile the condition
         self.expression()?;
         self.consume(TokenKind::RightParen, "Expected ')'")?;
 
         let exit_jump = self.emit_jump(OpCode::JumpIfFalse);
 
-        // pop the condition
+        // Pop the condition
         self.emit_opcode(OpCode::Pop);
-        // compile the body
+        // Compile the body
         self.statement()?;
 
         self.emit_loop(loop_start)?;
@@ -735,12 +733,12 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     }
 
     fn for_stmt(&mut self) -> Result<'a, ()> {
-        // start a new scope for the initializer
+        // Start a new scope for the initializer
         self.begin_scope();
 
         self.consume(TokenKind::LeftParen, "Expected '('")?;
 
-        // compile the initializer, if any. It can be a variable declaration,
+        // Compile the initializer, if any. It can be a variable declaration,
         // expression statement or just ';'
         match self.curr_token.kind {
             TokenKind::Var => {
@@ -758,28 +756,28 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         let mut loop_start = self.chunk().code.len();
         let mut exit_jump: isize = -1;
 
-        // compile the condition, if any
+        // Compile the condition, if any
         if !self.check(TokenKind::Semicolon) {
             self.expression()?;
 
-            // we have the condition value on top of the stack
+            // We have the condition value on top of the stack
             exit_jump = self.emit_jump(OpCode::JumpIfFalse) as isize;
             self.emit_opcode(OpCode::Pop);
         }
 
         self.consume(TokenKind::Semicolon, "Expected ';' at the end of condition")?;
 
-        // compile the update expression, if any
+        // Compile the update expression, if any
         if !self.check(TokenKind::RightParen) {
-            // need to jump over the update expression after running the condition
+            // Need to jump over the update expression after running the condition
             let update_jump = self.emit_jump(OpCode::Jump);
             let update_start = self.chunk().code.len();
 
             self.expression()?;
-            // we also have to discard its value
+            // We also have to discard its value
             self.emit_opcode(OpCode::Pop);
 
-            // also need to jump back to condition
+            // Also need to jump back to condition
             self.emit_loop(loop_start)?;
             loop_start = update_start;
 
@@ -790,15 +788,15 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
         self.begin_loop(loop_start);
 
-        // compile the body
+        // Compile the body
         self.statement()?;
-        // append a jump back to the start of the loop
+        // Append a jump back to the start of the loop
         self.emit_loop(loop_start)?;
 
-        // ok, the loop body is done, now patch the exit jump if present
+        // Ok, the loop body is done, now patch the exit jump if present
         if exit_jump != -1 {
             self.patch_jump(exit_jump as usize)?;
-            // also pop the condition
+            // Also pop the condition
             self.emit_opcode(OpCode::Pop);
         }
 
@@ -866,12 +864,12 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                     break;
                 }
 
-                // consume the comma
+                // Consume the comma
                 self.advance()?;
             }
         }
 
-        // consume the closing parenthesis
+        // Consume the closing parenthesis
         self.consume(
             TokenKind::RightParen,
             "Expected ')' after function arguments",
@@ -884,7 +882,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         let name = self.prev_token.lexeme;
         let index = Self::resolve_local(&self.locals, name);
 
-        // pick local or global ops and final index
+        // Pick local or global ops and final index
         let (get_op, get_op_long, set_op, set_op_long, idx) = if index != -1 {
             if !self.locals[index as usize].initialized {
                 return Err(CompileError::new(
@@ -922,7 +920,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             }
         };
 
-        // assignment or read
+        // Assignment or read
         if can_assign && self.curr_token.kind == TokenKind::Equal {
             self.advance()?;
             self.expression()?;
@@ -1001,10 +999,10 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     fn unary(&mut self, _: bool) -> Result<'a, ()> {
         let operator_kind = self.prev_token.kind;
 
-        // compile the operand
+        // Compile the operand
         self.parse_precedence(Precedence::Unary)?;
 
-        // emit the operator instruction
+        // Emit the operator instruction
         match operator_kind {
             TokenKind::Minus => self.emit_opcode(OpCode::Negate),
             TokenKind::Bang => self.emit_opcode(OpCode::Not),
@@ -1023,10 +1021,10 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         let operator_token = self.prev_token.clone();
         let operator_kind = self.prev_token.kind;
 
-        // compile the operand
+        // Compile the operand
         self.parse_precedence(self.get_rule(operator_kind).precedence + 1)?;
 
-        // emit the operator instruction
+        // Emit the operator instruction
         match operator_kind {
             TokenKind::Plus => self.emit_opcode(OpCode::Add),
             TokenKind::Minus => self.emit_opcode(OpCode::Sub),
@@ -1053,13 +1051,13 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         let operator_kind = self.prev_token.kind;
 
         if let TokenKind::Question = operator_kind {
-            // compile the 2nd operand
+            // Compile the 2nd operand
             self.parse_precedence(Precedence::Assignment)?;
 
-            // consume the colon
+            // Consume the colon
             self.consume(TokenKind::Colon, "Expected ':'")?;
 
-            // compile the 3rd operand
+            // Compile the 3rd operand
             self.parse_precedence(Precedence::Assignment)?;
 
             self.emit_opcode(OpCode::Ternary);
@@ -1078,8 +1076,8 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         if let TokenKind::Or = operator_kind {
             let then_jump = self.emit_jump(OpCode::JumpIfTrue);
 
-            // we'll just flow-through to the next instruction if the left operand is false
-            // compile the right operand
+            // We'll just flow-through to the next instruction if the left operand is false
+            // Compile the right operand
             self.emit_opcode(OpCode::Pop);
             self.parse_precedence(Precedence::And)?;
             self.patch_jump(then_jump)?;
@@ -1099,8 +1097,8 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         if let TokenKind::And = operator_kind {
             let then_jump = self.emit_jump(OpCode::JumpIfFalse);
 
-            // we'll just flow-through to the next instruction if the left operand is true
-            // compile the right operand
+            // We'll just flow-through to the next instruction if the left operand is true
+            // Compile the right operand
             self.emit_opcode(OpCode::Pop);
             self.parse_precedence(Precedence::Equality)?;
             self.patch_jump(then_jump)?;
@@ -1126,10 +1124,10 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
         self.consume(TokenKind::Semicolon, "Expected ';'")?;
 
-        // pop the locals in the loop body
+        // Pop the locals in the loop body
         self.emit_pop_scopes(scope_depth);
 
-        // jump back to the start of the loop
+        // Jump back to the start of the loop
         self.emit_loop(loop_start)
     }
 
@@ -1145,13 +1143,13 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
         self.consume(TokenKind::Semicolon, "Expected ';'")?;
 
-        // pop the locals in the loop body
+        // Pop the locals in the loop body
         self.emit_pop_scopes(scope_depth);
 
-        // emit a jump to the end of the loop
+        // Emit a jump to the end of the loop
         let break_jump = self.emit_jump(OpCode::Jump);
 
-        // push the jump to the loop context
+        // Push the jump to the loop context
         self.loop_contexts
             .last_mut()
             .unwrap()
@@ -1264,7 +1262,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
     }
 
-    /// declare local with `initialized` set to false
+    /// Declare local with `initialized` set to false
     fn declare_local(&mut self, name: &'a str) -> Result<'a, usize> {
         for local in self.locals.iter().rev() {
             if local.depth < self.curr_depth {
@@ -1285,12 +1283,12 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         Ok(self.locals.len() - 1)
     }
 
-    /// mark the local as being initialized
+    /// Mark the local as being initialized
     fn mark_as_initialized(&mut self, index: usize) {
         self.locals[index].initialized = true;
     }
 
-    /// returns the index of the first declaration of the
+    /// Returns the index of the first declaration of the
     /// given local in the given slice, -1 otherwise
     fn resolve_local(locals: &[Local], name: &'a str) -> i32 {
         for (index, local) in locals.iter().rev().enumerate() {
@@ -1302,56 +1300,56 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         -1
     }
 
-    /// resolves the given name in the chain of function scopes starting from the current
+    /// Resolves the given name in the chain of function scopes starting from the current
     /// function upto the global scope and returns the index of the upvalue if found, -1 otherwise
     fn resolve_upvalue(&mut self, name: &'a str) -> i32 {
-        // the current context is not stored in `self.contexts` so we've to handle it separately
+        // The current context is not stored in `self.contexts` so we've to handle it separately
         let len = self.contexts.len();
 
         if len == 0 {
-            // we are at the global scope
+            // We are at the global scope
             return -1;
         }
 
-        // check if the name is a local variable in the scope of the enclosing function
+        // Check if the name is a local variable in the scope of the enclosing function
         let index = Self::resolve_local(&self.contexts.last().unwrap().locals, name);
 
         if index != -1 {
-            // the name is a local variable in the enclosing function. Mark it as captured
+            // The name is a local variable in the enclosing function. Mark it as captured
             let index = index as usize;
             self.contexts.last_mut().unwrap().locals[index].captured = true;
 
             return Self::add_upvalue(&mut self.upvalues, true, index) as i32;
         }
 
-        // check if the name is an upvalue in the enclosing function
+        // Check if the name is an upvalue in the enclosing function
         let index = Self::resolve_upvalue_helper(&mut self.contexts, name);
 
         if index != -1 {
-            // the name is an upvalue in the enclosing function
+            // The name is an upvalue in the enclosing function
             Self::add_upvalue(&mut self.upvalues, false, index as usize) as i32
         } else {
             -1
         }
     }
 
-    /// resolves the given name in the chain of function scopes starting from the current
+    /// Resolves the given name in the chain of function scopes starting from the current
     /// function upto the global scope and returns the index of the upvalue if found, -1 otherwise
     fn resolve_upvalue_helper(contexts: &mut [CompilerContext], name: &'a str) -> i32 {
-        // if there is only one context, we've reached the global scope,
+        // If there is only one context, we've reached the global scope,
         // so the name must be a global variable (or it is undefined)
         let len = contexts.len();
 
         if len == 1 {
-            // we are at the global scope
+            // We are at the global scope
             return -1;
         }
 
-        // check if the name is a local variable in the scope of the enclosing function
+        // Check if the name is a local variable in the scope of the enclosing function
         let index = Self::resolve_local(&contexts[len - 2].locals, name);
 
         if index != -1 {
-            // the name is a local variable in the enclosing function. Mark it as captured
+            // The name is a local variable in the enclosing function. Mark it as captured
             let index = index as usize;
             contexts[len - 2].locals[index].captured = true;
 
@@ -1359,11 +1357,11 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 as i32;
         }
 
-        // check if the name is an upvalue in the enclosing function
+        // Check if the name is an upvalue in the enclosing function
         let index = Self::resolve_upvalue_helper(&mut contexts[..len - 1], name);
 
         if index != -1 {
-            // the name is an upvalue in the enclosing function
+            // The name is an upvalue in the enclosing function
             Self::add_upvalue(
                 &mut contexts.last_mut().unwrap().upvalues,
                 false,
@@ -1374,26 +1372,26 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
     }
 
-    /// adds the a new upvalue to the current function
+    /// Adds the a new upvalue to the current function
     fn add_upvalue(dest: &mut Vec<Upvalue>, is_local: bool, index: usize) -> usize {
-        // check if the upvalue already exists
+        // Check if the upvalue already exists
         for (i, upvalue) in dest.iter().enumerate() {
             if upvalue.is_local == is_local && upvalue.index == index {
                 return i;
             }
         }
 
-        // add a new upvalue
+        // Add a new upvalue
         dest.push(Upvalue { is_local, index });
         dest.len() - 1
     }
 
-    /// increases the current scope depth
+    /// Increases the current scope depth
     fn begin_scope(&mut self) {
         self.curr_depth += 1;
     }
 
-    /// decreases the scope depth to the one below the given depth and
+    /// Decreases the scope depth to the one below the given depth and
     /// pops all locals upto (including) that depth. Also emits instructions
     /// to close-over the locals that have been captured by upvalues
     fn end_scope(&mut self) {
@@ -1414,7 +1412,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.curr_depth -= 1;
     }
 
-    /// emits instructions to pop (or close-over) all locals upto (but excluding) the given depth
+    /// Emits instructions to pop (or close-over) all locals upto (but excluding) the given depth
     fn emit_pop_scopes(&mut self, upto_depth: usize) {
         let mut chunk = std::mem::replace(&mut self.function.chunk, Chunk::new());
         let mut rev_iter = self.locals.iter().rev();
@@ -1434,7 +1432,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.function.chunk = chunk;
     }
 
-    /// pushes a new loop context
+    /// Pushes a new loop context
     fn begin_loop(&mut self, loop_start: usize) {
         self.loop_contexts.push(LoopContext {
             loop_start: loop_start,
@@ -1443,9 +1441,9 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         });
     }
 
-    /// pops the topmost loop context
+    /// Pops the topmost loop context
     fn end_loop(&mut self) -> Result<'a, ()> {
-        // patch all the break statements in the loop body
+        // Patch all the break statements in the loop body
         let break_jumps = self.loop_contexts.pop().unwrap().break_jumps;
 
         for jump_offset in break_jumps {
@@ -1455,14 +1453,14 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         Ok(())
     }
 
-    /// returns the topmost (innermost) loop context
+    /// Returns the topmost (innermost) loop context
     fn innermost_loop(&self) -> Option<&LoopContext> {
         self.loop_contexts.last()
     }
 
-    /// prepares a new compilation context for the function `func_name`
+    /// Prepares a new compilation context for the function `func_name`
     fn push_context(&mut self, func_name: &str) {
-        // save current context
+        // Save current context
         let saved_context = CompilerContext {
             function: std::mem::replace(
                 &mut self.function,
@@ -1482,7 +1480,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.contexts.push(saved_context);
     }
 
-    /// restores the previous compilation context and returns the compiled function
+    /// Restores the previous compilation context and returns the compiled function
     fn pop_context(&mut self) -> Function {
         let compiled_function = std::mem::replace(
             &mut self.function,
@@ -1494,7 +1492,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             },
         );
 
-        // there will always be a saved context
+        // There will always be a saved context
         let saved_context = self.contexts.pop().unwrap();
 
         self.function = saved_context.function;
@@ -1593,7 +1591,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     }
 
     fn emit_loop(&mut self, loop_start: usize) -> Result<'a, ()> {
-        // jumps to the start of the loop
+        // Jumps to the start of the loop
         const BYTE_MASK: usize = (1usize << 8) - 1;
 
         self.emit_opcode(OpCode::Loop);
