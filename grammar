@@ -1,0 +1,61 @@
+program             → declaration* EOF ;
+
+declaration         → class_decl
+                    | var_decl
+                    | fun_decl
+                    | statement ;
+
+class_decl          → "class" IDENTIFIER ( ":" IDENTIFIER )? "{" function* "}" ;
+
+var_decl            → "var" IDENTIFIER ( "=" assignment )? ";" ;
+
+fun_decl            → "fun" function ; 
+function            → IDENTIFIER "(" parameters? ")" block ;
+parameters          → IDENTIFIER ( "," IDENTIFIER )* ;
+
+statement           → expression_stmt
+                    | print_stmt
+                    | block
+                    | if_stmt 
+                    | while_stmt
+                    | for_stmt 
+                    | "break" ";" 
+                    | "continue" ";" 
+                    | return_stmt ;
+
+expression_stmt     → expression ";" ;
+print_stmt          → "print" expression ";" ;
+block               → "{" declaration* "}" ;
+if_stmt             → "if" "(" expression ")" declaration
+                    ( "else" declaration )? ;
+while_stmt          → "while" "(" expression ")" declaration
+for_stmt            → "for" "(" ( var_decl | expression_stmt | ";")
+                    expression? ";" expression? ")" declaration ;
+return_stmt         → "return" expression? ";" ;
+
+expression          → comma ;
+comma               → assignment ( ","  assignment )* ;
+assignment          → (call "." )? IDENTIFIER 
+                    ( "=" | "+=" | "-=" | "*=" | "/=" ) assignment
+                    | logical_or "?" assignment ":" assignment 
+                    | logical_or ;
+
+logical_or          → logical_and ( "or" logical_and )* ;
+logical_and         → equality ( "and" equality )* ;
+equality            → comparison ( ( "!=" | "==" ) comparison )* ;
+comparison          → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
+term                → factor ( ( "-" | "+" ) factor )* ;
+factor              → unary ( ( "/" | "*" ) unary )* ;
+unary               → ( "!" | "-" ) unary
+                    | call ;
+call                → primary ( "(" arguments? ")" | "." IDENTIFIER )* ;
+arguments           → expression ( "," expression )* ;
+primary             → NUMBER | STRING 
+                    | "true" | "false" | "nil"
+                    | "(" expression ")" 
+                    | IDENTIFIER 
+                    | "fun" lambda
+                    | "this"
+                    | "super" "." IDENTIFIER ;
+                    
+lambda              → "(" parameters? ")" block ;
