@@ -1,3 +1,4 @@
+#[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TokenKind {
     // parenthesis
@@ -66,4 +67,10 @@ pub struct Token<'a> {
     pub kind: TokenKind,
     pub lexeme: &'a str,
     pub line: usize,
+}
+
+impl TokenKind {
+    pub fn as_usize(self) -> usize {
+        self as usize
+    }
 }

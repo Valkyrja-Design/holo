@@ -1,33 +1,28 @@
-use super::{chunk, compiler, disassembler, value};
+use super::{chunk, value};
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum InterpretResult {
-    InterpretOk,
-    InterpretCompilerError,
-    InterpretRuntimeError,
+    Ok,
+    CompileError,
+    RuntimeError,
 }
 
-pub struct VM {
-    source: String,
-    chunk: chunk::Chunk,
+pub struct VM<'a> {
+    chunk: &'a chunk::Chunk,
     ip: usize,
     stack: Vec<value::Value>,
 }
 
-impl VM {
-    pub fn new(source: String) -> Self {
+impl<'a> VM<'a> {
+    pub fn new(chunk: &'a chunk::Chunk) -> Self {
         VM {
-            source,
-            chunk: chunk::Chunk::default(),
+            chunk, // Store the reference
             ip: 0,
             stack: vec![],
         }
     }
 
-    pub fn interpret(&mut self) -> InterpretResult {
-        let mut compiler = compiler::Compiler::new(&self.source);
-
-        compiler.compile();
-
+    pub fn run(&mut self) -> InterpretResult {
         loop {
             match self.read_opcode() {
                 chunk::OpCode::OpConstant => {
@@ -45,13 +40,13 @@ impl VM {
                 chunk::OpCode::OpReturn => {
                     println!("{:#?}", self.stack.pop().unwrap());
 
-                    return InterpretResult::InterpretOk;
+                    return InterpretResult::Ok;
                 }
                 chunk::OpCode::OpNegate => {
                     if let Some(value) = self.stack.last_mut() {
                         *value = -*value;
                     } else {
-                        return InterpretResult::InterpretRuntimeError;
+                        return InterpretResult::RuntimeError;
                     }
                 }
                 chunk::OpCode::OpAdd => {
@@ -59,7 +54,7 @@ impl VM {
                     let left = self.stack.last_mut();
 
                     if left.is_none() || right.is_none() {
-                        return InterpretResult::InterpretRuntimeError;
+                        return InterpretResult::RuntimeError;
                     }
 
                     let left = left.unwrap();
@@ -72,7 +67,7 @@ impl VM {
                     let left = self.stack.last_mut();
 
                     if left.is_none() || right.is_none() {
-                        return InterpretResult::InterpretRuntimeError;
+                        return InterpretResult::RuntimeError;
                     }
 
                     let left = left.unwrap();
@@ -85,7 +80,7 @@ impl VM {
                     let left = self.stack.last_mut();
 
                     if left.is_none() || right.is_none() {
-                        return InterpretResult::InterpretRuntimeError;
+                        return InterpretResult::RuntimeError;
                     }
 
                     let left = left.unwrap();
@@ -98,14 +93,14 @@ impl VM {
                     let left = self.stack.last_mut();
 
                     if left.is_none() || right.is_none() {
-                        return InterpretResult::InterpretRuntimeError;
+                        return InterpretResult::RuntimeError;
                     }
 
                     let left = left.unwrap();
                     let right = right.unwrap();
 
                     if right == 0.0 {
-                        return InterpretResult::InterpretRuntimeError;
+                        return InterpretResult::RuntimeError;
                     }
 
                     *left /= right;
@@ -139,10 +134,6 @@ impl VM {
 
         self.chunk.constants[idx]
     }
-
-    fn print_stack(&self) {
-        println!("{:#?}", self.stack);
-    }
 }
 
 #[cfg(test)]
@@ -168,6 +159,10 @@ mod tests {
         }
 
         chunk.write_opcode(chunk::OpCode::OpReturn, 3);
+
+        let mut vm = VM::new(&chunk);
+
+        assert_eq!(vm.run(), InterpretResult::Ok);
     }
 
     #[test]
@@ -194,6 +189,10 @@ mod tests {
         chunk.write_opcode(chunk::OpCode::OpDivide, 6);
 
         chunk.write_opcode(chunk::OpCode::OpReturn, 7);
+
+        let mut vm = VM::new(&chunk);
+
+        assert_eq!(vm.run(), InterpretResult::Ok);
     }
 
     #[test]
@@ -211,5 +210,9 @@ mod tests {
         }
 
         chunk.write_opcode(chunk::OpCode::OpReturn, 3);
+
+        let mut vm = VM::new(&chunk);
+
+        assert_eq!(vm.run(), InterpretResult::Ok);
     }
 }

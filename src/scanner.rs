@@ -351,8 +351,6 @@ impl<'a> Scanner<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
-
     use super::*;
 
     #[test]
