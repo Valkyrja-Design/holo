@@ -526,13 +526,24 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.function()?;
 
         // restore the previous context
-        let function = self.pop_context();
+        let upvalues = std::mem::replace(&mut self.upvalues, Vec::new());
+        let mut function = self.pop_context();
+
+        // fill in the upvalue count
+        function.upvalue_count = upvalues.len();
 
         // allocate the function using the new direct allocation
         let func_value = self.gc.alloc_function(function);
 
         // emit a `Closure` instruction to wrap the function at runtime
         self.emit_opcode_with_constant(OpCode::Closure, OpCode::ClosureLong, func_value)?;
+
+        // emit the upvalues
+        for upvalue in upvalues {
+            self.emit_byte(if upvalue.is_local { 1 } else { 0 });
+            // FIXME: `upvalue.index` can be bigger than `u8::MAX`
+            self.emit_byte(upvalue.index as u8);
+        }
 
         // define it as a variable
         if self.curr_depth > 0 {
@@ -890,13 +901,25 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 index as usize,
             )
         } else {
-            (
-                OpCode::GetGlobal,
-                OpCode::GetGlobalLong,
-                OpCode::SetGlobal,
-                OpCode::SetGlobalLong,
-                self.sym_table.resolve(name),
-            )
+            let index = self.resolve_upvalue(name);
+
+            if index != -1 {
+                (
+                    OpCode::GetUpvalue,
+                    OpCode::GetUpvalueLong,
+                    OpCode::SetUpvalue,
+                    OpCode::SetUpvalueLong,
+                    index as usize,
+                )
+            } else {
+                (
+                    OpCode::GetGlobal,
+                    OpCode::GetGlobalLong,
+                    OpCode::SetGlobal,
+                    OpCode::SetGlobalLong,
+                    self.sym_table.resolve(name),
+                )
+            }
         };
 
         // assignment or read
@@ -1294,8 +1317,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         let index = Self::resolve_local(&self.contexts.last().unwrap().locals, name);
 
         if index != -1 {
-            // the name is a local variable in the enclosing function.
-            // mark it as captured
+            // the name is a local variable in the enclosing function. Mark it as captured
             let index = index as usize;
             self.contexts.last_mut().unwrap().locals[index].captured = true;
 
@@ -1329,8 +1351,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         let index = Self::resolve_local(&contexts[len - 2].locals, name);
 
         if index != -1 {
-            // the name is a local variable in the enclosing function.
-            // mark it as captured
+            // the name is a local variable in the enclosing function. Mark it as captured
             let index = index as usize;
             contexts[len - 2].locals[index].captured = true;
 
@@ -1376,8 +1397,6 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     /// pops all locals upto (including) that depth. Also emits instructions
     /// to close-over the locals that have been captured by upvalues
     fn end_scope(&mut self) {
-        // let mut locals_to_pop = 0;
-
         while let Some(local) = self.locals.last() {
             if local.depth < self.curr_depth {
                 break;
@@ -1390,19 +1409,14 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             }
 
             self.locals.pop();
-            // locals_to_pop += 1;
         }
 
         self.curr_depth -= 1;
-
-        // // this call won't throw error because declarations would've already done that
-        // let _ =
-        //     self.emit_opcode_with_num(OpCode::PopN, OpCode::PopNLong, locals_to_pop, "".to_owned());
     }
 
-    /// emits instruction to pop all locals upto (but excluding) the given depth
+    /// emits instructions to pop (or close-over) all locals upto (but excluding) the given depth
     fn emit_pop_scopes(&mut self, upto_depth: usize) {
-        let mut locals_to_pop = 0;
+        let mut chunk = std::mem::replace(&mut self.function.chunk, Chunk::new());
         let mut rev_iter = self.locals.iter().rev();
 
         while let Some(local) = rev_iter.next() {
@@ -1410,12 +1424,14 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 break;
             }
 
-            locals_to_pop += 1;
+            if local.captured {
+                chunk.write_opcode(OpCode::CloseUpvalue, self.prev_token.line);
+            } else {
+                chunk.write_opcode(OpCode::Pop, self.prev_token.line);
+            }
         }
 
-        // this call won't throw error because declarations would've already done that
-        let _ =
-            self.emit_opcode_with_num(OpCode::PopN, OpCode::PopNLong, locals_to_pop, "".to_owned());
+        self.function.chunk = chunk;
     }
 
     /// pushes a new loop context

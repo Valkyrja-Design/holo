@@ -25,4 +25,5 @@ var closure;
   }
 
   print closure(); // expect: a
+  print a; // expect: a
 }

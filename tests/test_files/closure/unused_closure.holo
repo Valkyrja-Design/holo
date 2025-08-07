@@ -9,5 +9,5 @@
   }
 }
 
-// If we get here, we didn't segfault when a went out of scope.
+// If we get here, we didn't segfault when `a` went out of scope.
 print "ok"; // expect: ok

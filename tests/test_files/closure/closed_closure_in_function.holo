@@ -9,3 +9,14 @@ var f;
 }
 
 f(); // expect: local
+
+{
+  var local = "local";
+  fun f_() {
+    print local;
+  }
+  f = f_;
+  local = "local local";
+}
+
+f(); // expect: local local

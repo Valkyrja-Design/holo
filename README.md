@@ -4,9 +4,12 @@ Holo is a small dynamically-typed and interpreted language inspired from [Lox](h
 
 ## TODO
 
-- [ ] Maybe impl `Deref` for `Closure` to `Function`
-- [ ] Fix indices in `Closure` instruction
-- [ ] Beware of GC
+- [ ] upvalues behavior with `continue`
+- [ ] make new loop variable in every iteration (for closing over it)
+- [ ] think about removing limit on locals and upvalues
+- [ ] maybe impl `Deref` for `Closure` to `Function`
+- [ ] fix indices in `Closure` instruction
+- [ ] beware of GC
 - [ ] the first slot of locals reserved for?
 - [ ] refactor and document code
 - [ ] handle multi line expressions like the following properly

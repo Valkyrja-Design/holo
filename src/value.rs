@@ -13,6 +13,13 @@ pub struct Function {
 #[derive(Debug)]
 pub struct Upvalue {
     pub location: *mut Value,
+    pub closed: Value,
+}
+
+impl Upvalue {
+    pub fn new(location: *mut Value, closed: Value) -> Self {
+        Self { location, closed }
+    }
 }
 
 #[derive(Debug)]
@@ -240,5 +247,11 @@ impl std::fmt::Display for Value {
                 }
             },
         }
+    }
+}
+
+impl Default for Value {
+    fn default() -> Self {
+        Self::Nil
     }
 }

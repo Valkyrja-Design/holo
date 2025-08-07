@@ -1,4 +1,5 @@
 var f;
+var g = "global";
 
 fun foo(param) {
   fun f_() {
@@ -7,5 +8,8 @@ fun foo(param) {
   f = f_;
 }
 foo("param");
-
 f(); // expect: param
+
+foo(g);
+g = "non-global";
+f(); // expect: global

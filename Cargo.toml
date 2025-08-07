@@ -5,6 +5,7 @@ edition = "2021"
 authors = ["Manish Kumawat"]
 
 [dependencies]
+arrayvec = "0.7.6"
 
 [profile.release]
 codegen-units = 1

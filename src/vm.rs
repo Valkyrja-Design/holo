@@ -4,7 +4,12 @@ use super::{
     table::StringInternTable,
     value::{Closure, Function, Upvalue, Value},
 };
-use std::io::Write;
+use crate::disassembler::{disassemble, disassemble_instr};
+use arrayvec::{ArrayVec, Drain};
+use std::{
+    io::Write,
+    ops::{Index, IndexMut},
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum InterpretResult {
@@ -14,16 +19,24 @@ pub enum InterpretResult {
 }
 
 #[derive(Clone, Copy)]
-pub struct CallFrame {
+struct CallFrame {
     closure: *mut Closure, // current closure being executed
     ip: usize,             // instruction pointer
     stack_start: usize,    // index of the first element of the stack for this frame
 }
 
+struct OpenUpvalue {
+    stack_index: usize,
+    upvalue: *mut Upvalue,
+}
+
+static ARRAY_SIZE: usize = 256; // default array size
+
 pub struct VM<'a, T: Write, U: Write> {
     call_stack: Vec<CallFrame>,
     current_frame: CallFrame,
-    stack: Vec<Value>,
+    stack: ArrayVec<Value, ARRAY_SIZE>,
+    open_upvalues: ArrayVec<OpenUpvalue, ARRAY_SIZE>,
     gc: gc::GC,
     str_intern_table: StringInternTable,
     globals: Vec<Option<Value>>, // None means the variable is undefined
@@ -53,7 +66,8 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 ip: 0,
                 stack_start: 0,
             },
-            stack: Vec::new(),
+            stack: ArrayVec::new(),
+            open_upvalues: ArrayVec::new(),
             gc,
             str_intern_table,
             globals,
@@ -64,6 +78,8 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
     }
 
     pub fn run(&mut self) -> InterpretResult {
+        disassemble(self.chunk(), "main");
+
         loop {
             match self.read_opcode() {
                 OpCode::Constant => {
@@ -95,6 +111,9 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     if self.call_stack.is_empty() {
                         return InterpretResult::Ok;
                     }
+
+                    // close upvalues for the current frame
+                    self.close_upvalues(self.current_frame.stack_start);
 
                     // otherwise, pop off the arguments and the callee from the stack,
                     // push the return value and set the current frame to the top of the call stack
@@ -380,7 +399,16 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                         .as_function_mut()
                         .expect("Closure constant must be a function");
                     let upvalue_count = func.upvalue_count;
-                    let mut closure = Closure::new(func as *mut Function, upvalue_count);
+                    let closure = Closure::new(func as *mut Function, upvalue_count);
+                    let closure_ptr = self.gc.alloc_closure_ptr(closure);
+                    let closure = unsafe {
+                        // SAFETY: Closure pointers are allocated by GC and remain valid
+                        // for the lifetime of the GC which outlives all Closure references
+                        &mut *closure_ptr
+                    };
+
+                    // push the closure first so that it can be captured by upvalues
+                    self.stack.push(Value::Closure(closure_ptr));
 
                     // initialize the upvalues
                     for i in 0..upvalue_count {
@@ -395,8 +423,6 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
 
                         closure.upvalues[i] = upvalue;
                     }
-
-                    self.stack.push(self.gc.alloc_closure(closure));
                 }
                 OpCode::ClosureLong => {
                     // TODO
@@ -428,7 +454,9 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     // TODO
                 }
                 OpCode::CloseUpvalue => {
-                    // TODO
+                    // Close over the local at the top of the stack
+                    self.close_upvalues(self.stack.len() - 1);
+                    self.stack.pop();
                 }
             }
         }
@@ -634,10 +662,55 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
     fn capture_local(&mut self, index: usize) -> *mut Upvalue {
         let abs_index = self.current_frame.stack_start + index;
         let location = &mut self.stack[abs_index] as *mut Value;
-        self.gc.alloc_upvalue_ptr(Upvalue { location })
+
+        // search for an existing upvalue for this local, our `open_upvalues` array
+        // is sorted by stack index, so we can use binary search
+        match self
+            .open_upvalues
+            .binary_search_by_key(&abs_index, |probe| probe.stack_index)
+        {
+            Ok(index) => self.open_upvalues[index].upvalue,
+            Err(index) => {
+                let upvalue = self
+                    .gc
+                    .alloc_upvalue_ptr(Upvalue::new(location, Value::default()));
+
+                self.open_upvalues.insert(
+                    index,
+                    OpenUpvalue {
+                        stack_index: abs_index,
+                        upvalue,
+                    },
+                );
+                upvalue
+            }
+        }
     }
 
-    // TRY: maybe stash the current frame's chunk in a local variable
+    /// closes all open upvalues that are above the given stack index
+    fn close_upvalues(&mut self, stack_index: usize) {
+        // find the first open value that needs to be closed
+        let pos = self
+            .open_upvalues
+            .partition_point(|upvalue| upvalue.stack_index < stack_index);
+
+        // close them
+        for upvalue in self.open_upvalues.drain(pos..) {
+            unsafe {
+                // SAFETY: Upvalue pointers are allocated by GC and remain valid
+                // for the lifetime of the GC which outlives all Value references
+
+                // move the stack value to the upvalue's closed field
+                // and set the upvalue's location to the closed field
+                let upvalue = &mut *upvalue.upvalue;
+
+                upvalue.closed = *upvalue.location;
+                upvalue.location = &mut upvalue.closed as *mut Value;
+            }
+        }
+    }
+
+    // TRY: stash the current frame's chunk in a local variable
     fn chunk(&self) -> &Chunk {
         unsafe {
             // SAFETY: Closure function pointers are allocated by GC and remain valid
