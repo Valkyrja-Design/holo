@@ -1,2 +1,2 @@
-[line 1] Error at 'fun': Expected expression
+[line 2] Error at 'arg': Redeclaration of variable 'arg'
 [line 4] Error at '}': Expected expression

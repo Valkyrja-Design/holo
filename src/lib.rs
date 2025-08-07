@@ -22,15 +22,28 @@ where
         Ok(source) => {
             let mut gc = gc::GC::new();
             let mut str_intern_table = table::StringInternTable::new();
-            let compiler =
-                compiler::Compiler::new(&source, &mut gc, &mut str_intern_table, &mut err_stream);
+            let (global_var_names, compiled_function) = {
+                let mut sym_table = sym_table::SymbolTable::new();
+                let compiler = compiler::Compiler::new(
+                    &source,
+                    "<main>",
+                    &mut gc,
+                    &mut str_intern_table,
+                    &mut sym_table,
+                    &mut err_stream,
+                );
+                let compiled_function = compiler.compile();
 
-            if let Some((chunk, sym_table)) = compiler.compile() {
+                (sym_table.names_as_owned(), compiled_function)
+            };
+
+            if let Some(function) = compiled_function {
+                let main_func_ptr = gc.alloc(object::Object::Func(function));
                 let mut vm = vm::VM::new(
-                    chunk,
+                    main_func_ptr,
                     gc,
                     str_intern_table,
-                    sym_table.names_as_owned(),
+                    global_var_names,
                     &mut output_stream,
                     &mut err_stream,
                 );
@@ -47,5 +60,4 @@ where
 #[cfg(test)]
 mod tests {
     use std::io::{stderr, stdout};
-
 }

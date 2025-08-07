@@ -3,7 +3,7 @@ use crate::disassembler::disassemble;
 use super::{
     chunk::{Chunk, OpCode},
     gc,
-    object::Object,
+    object::{Function, Object},
     table::StringInternTable,
     value::Value,
 };
@@ -16,9 +16,16 @@ pub enum InterpretResult {
     RuntimeError,
 }
 
+#[derive(Clone, Copy)]
+pub struct CallFrame {
+    function: *mut Object, // current function being executed
+    ip: usize,             // instruction pointer
+    stack_start: usize,    // index of the first element of the stack for this frame
+}
+
 pub struct VM<'a, T: Write, U: Write> {
-    chunk: Chunk,
-    ip: usize,
+    call_stack: Vec<CallFrame>,
+    current_frame: CallFrame,
     stack: Vec<Value>,
     gc: gc::GC,
     str_intern_table: StringInternTable,
@@ -30,7 +37,7 @@ pub struct VM<'a, T: Write, U: Write> {
 
 impl<'a, T: Write, U: Write> VM<'a, T, U> {
     pub fn new(
-        chunk: Chunk,
+        main_func_ptr: *mut Object,
         gc: gc::GC,
         str_intern_table: StringInternTable,
         global_var_names: Vec<String>,
@@ -38,8 +45,16 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         err_stream: &'a mut U,
     ) -> Self {
         VM {
-            chunk, // Store the reference
-            ip: 0,
+            call_stack: vec![CallFrame {
+                function: main_func_ptr,
+                ip: 0,
+                stack_start: 0,
+            }],
+            current_frame: CallFrame {
+                function: main_func_ptr,
+                ip: 0,
+                stack_start: 0,
+            },
             stack: vec![],
             gc,
             str_intern_table,
@@ -51,6 +66,8 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
     }
 
     pub fn run(&mut self) -> InterpretResult {
+        self.current_frame = self.call_stack.last().unwrap().clone();
+
         loop {
             match self.read_opcode() {
                 OpCode::Constant => {
@@ -304,7 +321,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     match self.stack.last() {
                         Some(Value::Bool(value)) => {
                             if !*value {
-                                self.ip += jump_offset;
+                                *self.ip_as_mut() += jump_offset;
                             }
                         }
                         Some(_) => {
@@ -319,7 +336,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     match self.stack.last() {
                         Some(Value::Bool(value)) => {
                             if *value {
-                                self.ip += jump_offset;
+                                *self.ip_as_mut() += jump_offset;
                             }
                         }
                         Some(_) => {
@@ -331,12 +348,12 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 OpCode::Jump => {
                     let jump_offset = self.read_int16();
 
-                    self.ip += jump_offset;
+                    *self.ip_as_mut() += jump_offset;
                 }
                 OpCode::Loop => {
                     let jump_offset = self.read_int16();
 
-                    self.ip -= jump_offset;
+                    *self.ip_as_mut() -= jump_offset;
                 }
             }
         }
@@ -391,7 +408,9 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
     }
 
     fn get_local(&mut self, index: usize) {
-        self.stack.push(self.stack[index]);
+        // index is relative to the current frame
+        let abs_index = self.current_frame.stack_start + index;
+        self.stack.push(self.stack[abs_index]);
     }
 
     fn set_local(&mut self, index: usize) -> InterpretResult {
@@ -399,7 +418,9 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
             return InterpretResult::RuntimeError;
         }
 
-        self.stack[index] = *self.stack.last().unwrap();
+        // index is relative to the current frame
+        let abs_index = self.current_frame.stack_start + index;
+        self.stack[abs_index] = *self.stack.last().unwrap();
         InterpretResult::Ok
     }
 
@@ -474,28 +495,49 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         }
     }
 
+    fn chunk(&self) -> &Chunk {
+        unsafe {
+            // SAFETY: `self.function` is always a valid pointer to a function
+            // object, the memory is managed by the GC
+            match &*self.current_frame.function {
+                Object::Func(Function { chunk, .. }) => chunk,
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    fn ip(&mut self) -> usize {
+        self.current_frame.ip
+    }
+
+    fn ip_as_mut(&mut self) -> &mut usize {
+        &mut self.current_frame.ip
+    }
+
     fn read_opcode(&mut self) -> OpCode {
         OpCode::from(self.read_byte())
     }
 
     fn read_byte(&mut self) -> u8 {
-        let byte = self.chunk.code[self.ip];
+        let ip = self.ip();
+        let byte = self.chunk().code[ip];
 
-        self.ip += 1;
+        *self.ip_as_mut() += 1;
         byte
     }
 
     fn read_constant(&mut self) -> Value {
         let idx = self.read_byte() as usize;
 
-        self.chunk.constants[idx]
+        self.chunk().constants[idx]
     }
 
     fn read_constant_long(&mut self) -> Value {
-        let idx = Chunk::read_as_24bit_int(&self.chunk.code[self.ip..self.ip + 3]);
+        let ip = self.ip();
+        let idx = Chunk::read_as_24bit_int(&self.chunk().code[ip..ip + 3]);
 
-        self.ip += 3;
-        self.chunk.constants[idx]
+        *self.ip_as_mut() += 3;
+        self.chunk().constants[idx]
     }
 
     fn read_int8(&mut self) -> usize {
@@ -503,21 +545,23 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
     }
 
     fn read_int16(&mut self) -> usize {
-        let ret = Chunk::read_as_16bit_int(&self.chunk.code[self.ip..self.ip + 2]);
+        let ip = self.ip();
+        let ret = Chunk::read_as_16bit_int(&self.chunk().code[ip..ip + 2]);
 
-        self.ip += 2;
+        *self.ip_as_mut() += 2;
         ret
     }
     fn read_int24(&mut self) -> usize {
-        let ret = Chunk::read_as_24bit_int(&self.chunk.code[self.ip..self.ip + 3]);
+        let ip = self.ip();
+        let ret = Chunk::read_as_24bit_int(&self.chunk().code[ip..ip + 3]);
 
-        self.ip += 3;
+        *self.ip_as_mut() += 3;
         ret
     }
 
     fn runtime_error(&mut self, err: &str) -> InterpretResult {
-        let instr = self.ip - 1;
-        let line = self.chunk.get_line_of(instr);
+        let instr = self.ip() - 1;
+        let line = self.chunk().get_line_of(instr);
         let _ = writeln!(self.err_stream, "[line {line}] Runtime error: {err}");
 
         InterpretResult::RuntimeError

@@ -1,13 +1,16 @@
+use crate::sym_table;
+
 use super::{
     chunk::{Chunk, OpCode},
     gc::GC,
+    object::{Function, FunctionKind, Object},
     scanner::Scanner,
     sym_table::SymbolTable,
     table::StringInternTable,
     token::{Token, TokenKind},
     value::Value,
 };
-use std::io::Write;
+use std::{char::MAX, io::Write};
 
 type Result<'a, T> = std::result::Result<T, CompileError<'a>>;
 
@@ -98,18 +101,32 @@ struct LoopContext {
     break_jumps: Vec<usize>, // jump statements to patch to the end of the loop
 }
 
+struct CompilerContext<'a> {
+    function: Function,
+    loop_contexts: Vec<LoopContext>,
+    curr_depth: usize,
+    locals: Vec<Local<'a>>,
+}
+
 pub struct Compiler<'a, 'b, W: Write> {
     source: &'a str,
     scanner: Scanner<'a>,
     curr_token: Token<'a>,
     prev_token: Token<'a>,
-    chunk: Chunk,
-    gc: &'b mut GC,
-    str_intern_table: &'b mut StringInternTable,
-    sym_table: SymbolTable<'a>,
+
+    // current compilation context
+    function: Function,
     locals: Vec<Local<'a>>,
     curr_depth: usize,
-    loop_stacks: Vec<LoopContext>,
+    loop_contexts: Vec<LoopContext>,
+
+    // saved contexts for nested functions
+    contexts: Vec<CompilerContext<'a>>,
+
+    // shared state
+    gc: &'b mut GC,
+    str_intern_table: &'b mut StringInternTable,
+    sym_table: &'b mut SymbolTable<'a>,
     had_error: bool,
     err_stream: &'b mut W,
 }
@@ -370,11 +387,12 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
     pub fn new(
         source: &'a str,
+        func_name: &str,
         gc: &'b mut GC,
         str_intern_table: &'b mut StringInternTable,
+        sym_table: &'b mut SymbolTable<'a>,
         err_stream: &'b mut W,
     ) -> Self {
-        // initialize with dummy tokens
         Compiler {
             source,
             scanner: Scanner::new(source),
@@ -388,19 +406,24 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 lexeme: "",
                 line: 0,
             },
-            chunk: Chunk::new(),
-            gc,
-            str_intern_table,
-            sym_table: SymbolTable::new(),
+            function: Function {
+                name: func_name.to_owned(),
+                arity: 0,
+                chunk: Chunk::new(),
+            },
             locals: Vec::new(),
             curr_depth: 0,
-            loop_stacks: Vec::new(),
+            loop_contexts: Vec::new(),
             had_error: false,
+            contexts: Vec::new(),
+            gc,
+            str_intern_table,
+            sym_table,
             err_stream,
         }
     }
 
-    pub fn compile(mut self) -> Option<(Chunk, SymbolTable<'a>)> {
+    pub fn compile(mut self) -> Option<Function> {
         if let Err(err) = self.advance() {
             self.report_err(err);
 
@@ -417,13 +440,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             }
         }
 
-        self.finish();
-
-        if !self.had_error {
-            Some((self.chunk, self.sym_table))
-        } else {
-            None
-        }
+        self.finish()
     }
 
     fn declaration(&mut self) -> Result<'a, ()> {
@@ -431,6 +448,10 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             TokenKind::Var => {
                 self.advance()?;
                 self.var_declaration()
+            }
+            TokenKind::Fun => {
+                self.advance()?;
+                self.fun_declaration()
             }
             _ => self.statement(),
         }
@@ -440,13 +461,11 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.consume(TokenKind::Identifier, "Expected variable name")?;
 
         let name = self.prev_token.lexeme;
-        let index;
-
-        if self.curr_depth > 0 {
-            index = self.declare_local(name)?;
+        let index = if self.curr_depth > 0 {
+            self.declare_local(name)?
         } else {
-            index = self.sym_table.declare(name);
-        }
+            self.sym_table.declare(name)
+        };
 
         // consume the initializer, if any
         if self.check(TokenKind::Equal) {
@@ -469,6 +488,111 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 "Too many globals in the program".to_owned(),
             )
         }
+    }
+
+    fn fun_declaration(&mut self) -> Result<'a, ()> {
+        if self.check(TokenKind::Identifier) {
+            self.advance()?;
+        } else {
+            return Err(CompileError::new(
+                self.prev_token.clone(),
+                "Expected function name".to_string(),
+            ));
+        }
+
+        let name = self.prev_token.lexeme;
+
+        // declare the function name in the current scope
+        let index = if self.curr_depth > 0 {
+            let index = self.declare_local(name)?;
+            self.mark_as_initialized(index);
+            index
+        } else {
+            self.sym_table.declare(name)
+        };
+
+        // save the current context
+        self.push_context(name);
+
+        // compile the function body
+        self.function()?;
+
+        // restore the previous context
+        let function = self.pop_context();
+
+        // allocate the function using the GC
+        let func_ptr = self.gc.alloc(Object::Func(function));
+
+        // emit the function as a constant
+        self.emit_opcode_with_constant(
+            OpCode::Constant,
+            OpCode::ConstantLong,
+            Value::Object(func_ptr),
+        )?;
+
+        // define it as a variable
+        if self.curr_depth > 0 {
+            // local variable
+            Ok(())
+        } else {
+            // global variable
+            self.emit_opcode_with_num(
+                OpCode::DefineGlobal,
+                OpCode::DefineGlobalLong,
+                index,
+                "Too many globals in the program".to_owned(),
+            )
+        }
+    }
+
+    /// Compiles a function signature and body, assumes the `fun` keyword has been consumed
+    fn function(&mut self) -> Result<'a, ()> {
+        const MAX_PARAMS: u8 = 255;
+
+        self.begin_scope();
+
+        // compile the parameter list
+        self.consume(TokenKind::LeftParen, "Expected '(' after function name")?;
+
+        let mut arity: u8 = 0;
+
+        if !self.check(TokenKind::RightParen) {
+            loop {
+                if arity == MAX_PARAMS {
+                    return Err(CompileError::new(
+                        self.prev_token.clone(),
+                        "Cannot have more than 255 parameters".to_string(),
+                    ));
+                }
+
+                arity += 1;
+                self.consume(TokenKind::Identifier, "Expected parameter name")?;
+
+                let name = self.prev_token.lexeme;
+                let index = self.declare_local(name)?;
+                self.mark_as_initialized(index);
+
+                if !self.check(TokenKind::Comma) {
+                    break;
+                }
+
+                self.advance()?;
+            }
+        }
+
+        self.function.arity = arity;
+        self.consume(
+            TokenKind::RightParen,
+            "Expected ')' after function parameters",
+        )?;
+
+        // compile the body
+        self.consume(TokenKind::LeftBrace, "Expected '{' before function body")?;
+        self.block()?;
+
+        // implicit return
+        self.emit_return();
+        Ok(())
     }
 
     fn statement(&mut self) -> Result<'a, ()> {
@@ -567,7 +691,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     }
 
     fn while_stmt(&mut self) -> Result<'a, ()> {
-        let loop_start = self.chunk.code.len();
+        let loop_start = self.chunk().code.len();
 
         self.begin_loop(loop_start);
 
@@ -585,7 +709,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
         self.emit_loop(loop_start)?;
         self.patch_jump(exit_jump)?;
-        
+
         self.emit_opcode(OpCode::Pop);
         self.end_loop()?;
         Ok(())
@@ -612,24 +736,25 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             }
         }
 
-        let mut loop_start = self.chunk.code.len();
+        let mut loop_start = self.chunk().code.len();
         let mut exit_jump: isize = -1;
 
         // compile the condition, if any
         if !self.check(TokenKind::Semicolon) {
             self.expression()?;
-            self.consume(TokenKind::Semicolon, "Expected ';' at the end of condition")?;
 
             // we have the condition value on top of the stack
             exit_jump = self.emit_jump(OpCode::JumpIfFalse) as isize;
             self.emit_opcode(OpCode::Pop);
         }
 
+        self.consume(TokenKind::Semicolon, "Expected ';' at the end of condition")?;
+
         // compile the update expression, if any
         if !self.check(TokenKind::RightParen) {
             // need to jump over the update expression after running the condition
             let update_jump = self.emit_jump(OpCode::Jump);
-            let update_start = self.chunk.code.len();
+            let update_start = self.chunk().code.len();
 
             self.expression()?;
             // we also have to discard its value
@@ -929,7 +1054,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         };
 
         self.consume(TokenKind::Semicolon, "Expected ';'")?;
-        
+
         // pop the locals in the loop body
         self.emit_pop_scopes(scope_depth);
 
@@ -937,7 +1062,11 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         let break_jump = self.emit_jump(OpCode::Jump);
 
         // push the jump to the loop context
-        self.loop_stacks.last_mut().unwrap().break_jumps.push(break_jump);
+        self.loop_contexts
+            .last_mut()
+            .unwrap()
+            .break_jumps
+            .push(break_jump);
         Ok(())
     }
 
@@ -1035,8 +1164,14 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.curr_token.kind == kind
     }
 
-    fn finish(&mut self) {
+    fn finish(mut self) -> Option<Function> {
         self.emit_return();
+
+        if !self.had_error {
+            Some(self.function)
+        } else {
+            None
+        }
     }
 
     /// declare local with `initialized` set to false
@@ -1121,7 +1256,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
     /// pushes a new loop context
     fn begin_loop(&mut self, loop_start: usize) {
-        self.loop_stacks.push(LoopContext {
+        self.loop_contexts.push(LoopContext {
             loop_start: loop_start,
             scope_depth: self.curr_depth,
             break_jumps: Vec::new(),
@@ -1131,7 +1266,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     /// pops the topmost loop context
     fn end_loop(&mut self) -> Result<'a, ()> {
         // patch all the break statements in the loop body
-        let break_jumps = self.loop_stacks.pop().unwrap().break_jumps;
+        let break_jumps = self.loop_contexts.pop().unwrap().break_jumps;
 
         for jump_offset in break_jumps {
             self.patch_jump(jump_offset)?;
@@ -1142,20 +1277,70 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
     /// returns the topmost (innermost) loop context
     fn innermost_loop(&self) -> Option<&LoopContext> {
-        self.loop_stacks.last()
+        self.loop_contexts.last()
+    }
+
+    /// prepares a new compilation context for the function `func_name`
+    fn push_context(&mut self, func_name: &str) {
+        // save current context
+        let saved_context = CompilerContext {
+            function: std::mem::replace(
+                &mut self.function,
+                Function {
+                    name: func_name.to_owned(),
+                    arity: 0,
+                    chunk: Chunk::new(),
+                },
+            ),
+            locals: std::mem::replace(&mut self.locals, Vec::new()),
+            curr_depth: std::mem::replace(&mut self.curr_depth, 0),
+            loop_contexts: std::mem::replace(&mut self.loop_contexts, Vec::new()),
+        };
+
+        self.contexts.push(saved_context);
+    }
+
+    /// restores the previous compilation context and returns the compiled function
+    fn pop_context(&mut self) -> Function {
+        let compiled_function = std::mem::replace(
+            &mut self.function,
+            Function {
+                name: String::new(),
+                arity: 0,
+                chunk: Chunk::new(),
+            },
+        );
+        // there will always be a saved context
+        let saved_context = self.contexts.pop().unwrap();
+
+        self.function = saved_context.function;
+        self.locals = saved_context.locals;
+        self.curr_depth = saved_context.curr_depth;
+        self.loop_contexts = saved_context.loop_contexts;
+
+        compiled_function
+    }
+
+    fn chunk(&mut self) -> &mut Chunk {
+        &mut self.function.chunk
     }
 
     fn emit_byte(&mut self, byte: u8) {
-        self.chunk.write_byte(byte, self.prev_token.line);
+        let line = self.prev_token.line;
+
+        self.chunk().write_byte(byte, line);
     }
 
     fn emit_opcode(&mut self, opcode: OpCode) {
-        self.chunk.write_opcode(opcode, self.prev_token.line);
+        let line = self.prev_token.line;
+
+        self.chunk().write_opcode(opcode, line);
     }
 
     fn emit_return(&mut self) {
-        self.chunk
-            .write_opcode(OpCode::Return, self.prev_token.line);
+        let line = self.prev_token.line;
+
+        self.chunk().write_opcode(OpCode::Return, line);
     }
 
     fn emit_opcode_with_num(
@@ -1172,8 +1357,10 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             self.emit_byte(num as u8);
             Ok(())
         } else if num <= MAX24BIT {
+            let line = self.prev_token.line;
+
             self.emit_opcode(opcode_long);
-            self.chunk.write_as_24bit_int(num, self.prev_token.line);
+            self.chunk().write_as_24bit_int(num, line);
             Ok(())
         } else {
             Err(CompileError::new(self.prev_token.clone(), err))
@@ -1186,7 +1373,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         opcode_long: OpCode,
         value: Value,
     ) -> Result<'a, ()> {
-        let index = self.chunk.add_constant(value);
+        let index = self.chunk().add_constant(value);
         self.emit_opcode_with_num(
             opcode,
             opcode_long,
@@ -1195,17 +1382,19 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         )
     }
 
+    /// Emits a jump instruction and returns the location of the first byte of the jump address
     fn emit_jump(&mut self, opcode: OpCode) -> usize {
-        self.chunk.write_opcode(opcode, self.prev_token.line);
-        self.chunk.write_bytes(&[0; 2], &[self.prev_token.line; 2]);
-        // return the location of the first byte of the jump address
-        self.chunk.code.len() - 2
+        let line = self.prev_token.line;
+
+        self.chunk().write_opcode(opcode, line);
+        self.chunk().write_bytes(&[0; 2], &[line; 2]);
+        self.chunk().code.len() - 2
     }
 
     fn patch_jump(&mut self, offset: usize) -> Result<'a, ()> {
         const BYTE_MASK: usize = (1usize << 8) - 1;
 
-        let jump_dist = self.chunk.code.len() - offset - 2; // -2 for the operands
+        let jump_dist = self.chunk().code.len() - offset - 2; // -2 for the operands
 
         if jump_dist > u16::MAX as usize {
             Err(CompileError::new(
@@ -1213,8 +1402,8 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 "Too much jump distance".to_string(),
             ))
         } else {
-            self.chunk.code[offset] = ((jump_dist >> 8) & BYTE_MASK) as u8;
-            self.chunk.code[offset + 1] = (jump_dist & BYTE_MASK) as u8;
+            self.chunk().code[offset] = ((jump_dist >> 8) & BYTE_MASK) as u8;
+            self.chunk().code[offset + 1] = (jump_dist & BYTE_MASK) as u8;
             Ok(())
         }
     }
@@ -1225,7 +1414,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
         self.emit_opcode(OpCode::Loop);
 
-        let jump_dist = self.chunk.code.len() - loop_start + 2; // +2 for the operands
+        let jump_dist = self.chunk().code.len() - loop_start + 2; // +2 for the operands
 
         if jump_dist > u16::MAX as usize {
             Err(CompileError::new(
@@ -1246,11 +1435,13 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     fn report_err(&mut self, err: CompileError<'a>) {
         self.had_error = true;
         write!(self.err_stream, "[line {}] Error", err.token.line).unwrap();
+
         match err.token.kind {
             TokenKind::Eof => write!(self.err_stream, " at end of file").unwrap(),
             TokenKind::Error => {}
             _ => write!(self.err_stream, " at '{}'", err.token.lexeme).unwrap(),
         }
+
         writeln!(self.err_stream, ": {}", err.err).unwrap();
     }
 }

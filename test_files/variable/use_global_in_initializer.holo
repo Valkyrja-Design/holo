@@ -1,2 +1,3 @@
+// [line 1] Runtime error: Undefined variable 'a'
 var a = a;
 print a;

@@ -8,7 +8,9 @@ pub struct GC {
 
 impl GC {
     pub fn new() -> Self {
-        GC { objects: vec![] }
+        GC {
+            objects: Vec::new(),
+        }
     }
 
     pub fn alloc(&mut self, obj: Object) -> ObjRef {
@@ -24,8 +26,7 @@ impl Drop for GC {
     fn drop(&mut self) {
         for obj in &mut self.objects {
             unsafe {
-                // SAFETY: for now all objects will be dropped at the end of
-                // the execution
+                // SAFETY: for now all objects will be dropped at the end of the execution
                 ManuallyDrop::drop(obj);
             }
         }

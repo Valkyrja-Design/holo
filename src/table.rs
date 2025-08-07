@@ -16,7 +16,6 @@ use std::{
 #[derive(Clone, Copy)]
 struct StrKey(NonNull<str>);
 
-// TEST: maybe store hash in the key itself?
 impl Hash for StrKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
         // SAFETY: the pointer must refer to a valid and live `str`.

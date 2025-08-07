@@ -6,16 +6,16 @@ Holo is a small dynamically-typed and interpreted language heavily inspired from
 
 - [ ] refactor and document code
 - [ ] handle multi line expressions like the following properly
-
 ```
 print -
     true;
 
 // should show error at line 1 instead of line 2
 ```
+- [ ] impl Display trait for objects
+- [ ] put limit on number of nested functions
+- [ ] test with string hash for interning in the metadata itself
 - [ ] fix error token in `emit_opcode_with*` functions
-- [x] build a symbol table for globals
-- [x] multi-line strings
 - [ ] add long jump instructions
 - [ ] try more specialized instructions
 - [ ] const vars
@@ -23,3 +23,5 @@ print -
 - [ ] string interpolation
 - [ ] Better error handling/messages
 - [ ] standard library
+- [x] build a symbol table for globals
+- [x] multi-line strings

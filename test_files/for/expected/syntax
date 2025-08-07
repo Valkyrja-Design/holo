@@ -1,9 +1,5 @@
-[line 16] Error at 'fun': Expected expression
-[line 17] Error at ';': Expected expression
+[line 17] Error at 'return': Expected expression
 [line 18] Error at '}': Expected expression
 [line 19] Error at '(': Expected ';' at the end of statement
-[line 28] Error at 'fun': Expected expression
-[line 29] Error at ';': Expected expression
 [line 31] Error at 'return': Expected expression
 [line 32] Error at '}': Expected expression
-[line 50] Error at ';': Expected expression
