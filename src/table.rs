@@ -1,8 +1,4 @@
-use super::{
-    gc::GC,
-    object::{ObjRef, Object},
-    value::Value,
-};
+use super::{gc::GC, value::Value};
 use std::{collections::HashMap, fmt::Debug};
 use std::{
     hash::{Hash, Hasher},
@@ -34,28 +30,28 @@ impl PartialEq for StrKey {
 
 impl Eq for StrKey {}
 
-pub struct StringInternTable(HashMap<StrKey, ObjRef>);
+pub struct StringInternTable(HashMap<StrKey, *mut String>);
 
 impl StringInternTable {
     pub fn new() -> Self {
         Self(HashMap::new())
     }
 
-    pub fn intern_slice(&mut self, value: &str, gc: &mut GC) -> ObjRef {
+    pub fn intern_slice(&mut self, value: &str, gc: &mut GC) -> *mut String {
         // only uses the `value` for comparison purposes
         let key = StrKey(NonNull::from(value));
-        self.intern_inner(key, || gc.alloc(Object::Str(value.to_owned())))
+        self.intern_inner(key, || gc.alloc_string_ptr(value.to_string()))
     }
 
-    pub fn intern_owned(&mut self, value: String, gc: &mut GC) -> ObjRef {
+    pub fn intern_owned(&mut self, value: String, gc: &mut GC) -> *mut String {
         // only uses the `value` for comparison purposes
         let key = StrKey(NonNull::from(value.as_str()));
-        self.intern_inner(key, || gc.alloc(Object::Str(value)))
+        self.intern_inner(key, || gc.alloc_string_ptr(value))
     }
 
-    fn intern_inner<F>(&mut self, key: StrKey, alloc: F) -> ObjRef
+    fn intern_inner<F>(&mut self, key: StrKey, alloc: F) -> *mut String
     where
-        F: FnOnce() -> ObjRef,
+        F: FnOnce() -> *mut String,
     {
         if let Some(&handle) = self.0.get(&key) {
             return handle;
@@ -65,18 +61,12 @@ impl StringInternTable {
         self.insert_handle(handle)
     }
 
-    fn insert_handle(&mut self, handle: ObjRef) -> ObjRef {
+    fn insert_handle(&mut self, handle: *mut String) -> *mut String {
         // SAFETY: the GC makes sure that the handle is valid
         unsafe {
-            match &*handle {
-                Object::Str(s) => {
-                    let key = StrKey(NonNull::from(s.as_str()));
-                    self.0.insert(key, handle);
-
-                    handle
-                }
-                _ => unreachable!(),
-            }
+            let key = StrKey(NonNull::from((*handle).as_str()));
+            self.0.insert(key, handle);
+            handle
         }
     }
 }
@@ -87,11 +77,9 @@ impl Debug for StringInternTable {
 
         for &handle in self.0.values() {
             // SAFETY: This is only called while the VM is running and
-            // the GC makes sure `ObjRef`s in the table are alive and valid
+            // the GC makes sure that all pointers in the table are alive and valid
             unsafe {
-                if let Object::Str(ref s) = *handle {
-                    dbg.entry(s);
-                }
+                dbg.entry(&(*handle).as_str());
             }
         }
 

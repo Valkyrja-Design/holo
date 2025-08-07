@@ -54,6 +54,13 @@ pub fn disassemble_instr(chunk: &Chunk, offset: usize) -> usize {
         OpCode::Jump => unary_instr16(chunk, "JUMP", offset),
         OpCode::Loop => unary_instr16(chunk, "LOOP", offset),
         OpCode::Call => unary_instr8(chunk, "CALL", offset),
+        OpCode::Closure => closure_instr(chunk, offset),
+        OpCode::ClosureLong => closure_instr_long(chunk, offset),
+        OpCode::GetUpvalue => unary_instr8(chunk, "GET_UPVALUE", offset),
+        OpCode::GetUpvalueLong => unary_instr24(chunk, "GET_UPVALUE_LONG", offset),
+        OpCode::SetUpvalue => unary_instr8(chunk, "SET_UPVALUE", offset),
+        OpCode::SetUpvalueLong => unary_instr24(chunk, "SET_UPVALUE_LONG", offset),
+        OpCode::CloseUpvalue => simple_instr("CLOSE_UPVALUE", offset),
     }
 }
 
@@ -95,6 +102,58 @@ fn unary_instr24(chunk: &Chunk, name: &str, offset: usize) -> usize {
 
     println!("{} {}", name, op);
     offset + 4
+}
+
+fn closure_instr(chunk: &Chunk, mut offset: usize) -> usize {
+    let idx = chunk.code[offset + 1];
+
+    offset += 2;
+    println!("CLOSURE {}", idx);
+
+    // get the number of upvalues from the closure
+    let function = chunk.constants[idx as usize].as_function().unwrap();
+
+    for _ in 0..function.upvalue_count {
+        let is_local = chunk.code[offset] == 1;
+        let idx = chunk.code[offset + 1];
+
+        offset += 2;
+        println!(
+            "{:04} {:04} {} {}",
+            offset - 2,
+            chunk.get_line_of(offset - 2),
+            if is_local { "local" } else { "upvalue" },
+            idx
+        );
+    }
+
+    offset
+}
+
+fn closure_instr_long(chunk: &Chunk, mut offset: usize) -> usize {
+    let idx = Chunk::read_as_24bit_int(&chunk.code[offset + 1..offset + 4]);
+
+    println!("CLOSURE_LONG {}", idx);
+    offset += 4;
+
+    // get the number of upvalues from the closure
+    let function = chunk.constants[idx as usize].as_function().unwrap();
+
+    for _ in 0..function.upvalue_count {
+        let is_local = chunk.code[offset] == 1;
+        let idx = chunk.code[offset + 1];
+
+        offset += 2;
+        println!(
+            "{:04} {:04} {} {}",
+            offset - 2,
+            chunk.get_line_of(offset - 2),
+            if is_local { "local" } else { "upvalue" },
+            idx
+        );
+    }
+
+    offset
 }
 
 #[cfg(test)]

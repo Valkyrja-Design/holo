@@ -40,6 +40,13 @@ pub enum OpCode {
     Jump,
     Loop,
     Call,
+    Closure,
+    ClosureLong,
+    GetUpvalue,
+    GetUpvalueLong,
+    SetUpvalue,
+    SetUpvalueLong,
+    CloseUpvalue,
 }
 
 impl From<u8> for OpCode {
@@ -83,6 +90,13 @@ impl From<u8> for OpCode {
             35 => Self::Jump,
             36 => Self::Loop,
             37 => Self::Call,
+            38 => Self::Closure,
+            39 => Self::ClosureLong,
+            40 => Self::GetUpvalue,
+            41 => Self::GetUpvalueLong,
+            42 => Self::SetUpvalue,
+            43 => Self::SetUpvalueLong,
+            44 => Self::CloseUpvalue,
             _ => unreachable!("invalid opcode!"),
         }
     }
@@ -129,6 +143,13 @@ impl From<OpCode> for u8 {
             OpCode::Jump => 35,
             OpCode::Loop => 36,
             OpCode::Call => 37,
+            OpCode::Closure => 38,
+            OpCode::ClosureLong => 39,
+            OpCode::GetUpvalue => 40,
+            OpCode::GetUpvalueLong => 41,
+            OpCode::SetUpvalue => 42,
+            OpCode::SetUpvalueLong => 43,
+            OpCode::CloseUpvalue => 44,
         }
     }
 }

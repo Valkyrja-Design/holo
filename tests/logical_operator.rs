@@ -9,6 +9,7 @@ use std::path::PathBuf;
 fn logical_operator() {
     // base directory containing the test inputs and expected outputs
     let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
         .join("test_files")
         .join("logical_operator");
     let expected_dir = base_dir.join("expected");

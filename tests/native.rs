@@ -8,6 +8,7 @@ use std::path::PathBuf;
 fn clock() {
     // base directory containing the test inputs and expected outputs
     let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
         .join("test_files")
         .join("native");
     let path = base_dir.join("clock.holo");
@@ -32,6 +33,7 @@ fn clock() {
 fn clock_error() {
     // base directory containing the test inputs and expected outputs
     let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
         .join("test_files")
         .join("native");
     let expected_dir = base_dir.join("expected");

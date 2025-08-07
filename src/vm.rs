@@ -1,9 +1,8 @@
 use super::{
     chunk::{Chunk, OpCode},
     gc,
-    object::{Function, Object},
     table::StringInternTable,
-    value::Value,
+    value::{Closure, Function, Upvalue, Value},
 };
 use std::io::Write;
 
@@ -16,7 +15,7 @@ pub enum InterpretResult {
 
 #[derive(Clone, Copy)]
 pub struct CallFrame {
-    function: *mut Object, // current function being executed
+    closure: *mut Closure, // current closure being executed
     ip: usize,             // instruction pointer
     stack_start: usize,    // index of the first element of the stack for this frame
 }
@@ -35,7 +34,7 @@ pub struct VM<'a, T: Write, U: Write> {
 
 impl<'a, T: Write, U: Write> VM<'a, T, U> {
     pub fn new(
-        main_func_ptr: *mut Object,
+        main_closure: *mut Closure,
         gc: gc::GC,
         str_intern_table: StringInternTable,
         global_var_names: Vec<String>,
@@ -45,12 +44,12 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
     ) -> Self {
         VM {
             call_stack: vec![CallFrame {
-                function: main_func_ptr,
+                closure: main_closure,
                 ip: 0,
                 stack_start: 0,
             }],
             current_frame: CallFrame {
-                function: main_func_ptr,
+                closure: main_closure,
                 ip: 0,
                 stack_start: 0,
             },
@@ -241,7 +240,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                         return InterpretResult::RuntimeError;
                     }
 
-                    let _ = writeln!(self.output_stream, "{:#?}", self.stack.pop().unwrap());
+                    let _ = writeln!(self.output_stream, "{}", self.stack.pop().unwrap());
                 }
                 OpCode::Pop => {
                     if self.stack.is_empty() {
@@ -375,6 +374,62 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                         return InterpretResult::RuntimeError;
                     }
                 }
+                OpCode::Closure => {
+                    let constant = self.read_constant();
+                    let func = constant
+                        .as_function_mut()
+                        .expect("Closure constant must be a function");
+                    let upvalue_count = func.upvalue_count;
+                    let mut closure = Closure::new(func as *mut Function, upvalue_count);
+
+                    // initialize the upvalues
+                    for i in 0..upvalue_count {
+                        let is_local = self.read_byte() == 1;
+                        let index = self.read_byte() as usize;
+
+                        let upvalue = if is_local {
+                            self.capture_local(index)
+                        } else {
+                            self.upvalues()[index]
+                        };
+
+                        closure.upvalues[i] = upvalue;
+                    }
+
+                    self.stack.push(self.gc.alloc_closure(closure));
+                }
+                OpCode::ClosureLong => {
+                    // TODO
+                }
+                OpCode::GetUpvalue => {
+                    let index = self.read_byte() as usize;
+                    let upvalue = self.upvalues()[index];
+
+                    unsafe {
+                        // SAFETY: Upvalue pointers are allocated by GC and remain valid
+                        // for the lifetime of the GC which outlives all Value references
+                        self.stack.push(*(*upvalue).location)
+                    }
+                }
+                OpCode::GetUpvalueLong => {
+                    // TODO
+                }
+                OpCode::SetUpvalue => {
+                    let index = self.read_byte() as usize;
+                    let upvalue = self.upvalues()[index];
+
+                    unsafe {
+                        // SAFETY: Upvalue pointers are allocated by GC and remain valid
+                        // for the lifetime of the GC which outlives all Value references
+                        *(*upvalue).location = *self.stack.last().unwrap()
+                    }
+                }
+                OpCode::SetUpvalueLong => {
+                    // TODO
+                }
+                OpCode::CloseUpvalue => {
+                    // TODO
+                }
             }
         }
     }
@@ -387,39 +442,40 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         let callee = self.stack[self.stack.len() - (arg_count as usize) - 1];
 
         match callee {
-            Value::Object(func_ptr) => {
-                let function = unsafe {
-                    // SAFETY: we only ever use GC allocated pointers which are
-                    // made sure to be valid by the GC
-                    match &*func_ptr {
-                        Object::Func(func) => func,
-                        Object::NativeFunc(native_func) => {
-                            let args = &self.stack[self.stack.len() - (arg_count as usize)..];
-                            let ret = native_func.call(args);
-
-                            match ret {
-                                Ok(value) => {
-                                    self.stack
-                                        .truncate(self.stack.len() - (arg_count as usize) - 1);
-                                    self.stack.push(value);
-                                    return InterpretResult::Ok;
-                                }
-                                Err(err) => {
-                                    return self.runtime_error(&err);
-                                }
-                            }
-                        }
-                        _ => return self.runtime_error("Can only call functions and classes"),
-                    }
+            Value::Closure(closure) => {
+                let arity = unsafe {
+                    // SAFETY: Closure pointers are allocated by GC and remain valid
+                    // for the lifetime of the GC which outlives all Value references
+                    (*closure).arity()
                 };
 
-                self.call(func_ptr, function.arity, arg_count)
+                self.call(closure, arity, arg_count)
+            }
+            Value::NativeFunc(native) => {
+                let args = &self.stack[self.stack.len() - (arg_count as usize)..];
+                let ret = unsafe {
+                    // SAFETY: NativeFunc pointers are allocated by GC and remain valid
+                    // for the lifetime of the GC which outlives all Value references
+                    (*native).call(args)
+                };
+
+                match ret {
+                    Ok(value) => {
+                        self.stack
+                            .truncate(self.stack.len() - (arg_count as usize) - 1);
+                        self.stack.push(value);
+                        return InterpretResult::Ok;
+                    }
+                    Err(err) => {
+                        return self.runtime_error(&err);
+                    }
+                }
             }
             _ => self.runtime_error("Can only call functions and classes"),
         }
     }
 
-    fn call(&mut self, function: *mut Object, arity: u8, arg_count: u8) -> InterpretResult {
+    fn call(&mut self, closure: *mut Closure, arity: u8, arg_count: u8) -> InterpretResult {
         if arity != arg_count {
             return self.runtime_error(&format!(
                 "Incorrect number of arguments: expected {}, got {}",
@@ -431,7 +487,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         // we need to write back the current ip to the current frame on the call stack
         self.call_stack.last_mut().unwrap().ip = self.current_frame.ip;
         self.call_stack.push(CallFrame {
-            function,
+            closure,
             ip: 0,
             stack_start: self.stack.len() - (arg_count as usize),
         });
@@ -539,23 +595,18 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 *left += right;
                 InterpretResult::Ok
             }
-            (Value::Object(left), Value::Object(right)) => unsafe {
-                // SAFETY: we only ever use GC allocated pointers which are
-                // made sure to be valid by the GC
-                match (&**left, &*right) {
-                    (Object::Str(l_str), Object::Str(r_str)) => {
-                        let mut concatenated_str: String =
-                            String::with_capacity(l_str.len() + r_str.len());
-                        concatenated_str.push_str(l_str);
-                        concatenated_str.push_str(r_str);
+            (Value::String(left), Value::String(right)) => unsafe {
+                // SAFETY: String pointers are allocated by GC and remain valid
+                // for the lifetime of the GC which outlives all Value references
+                let mut concatenated_str: String =
+                    String::with_capacity((**left).len() + (*right).len());
+                concatenated_str.push_str(&**left);
+                concatenated_str.push_str(&*right);
 
-                        *left = self
-                            .str_intern_table
-                            .intern_owned(concatenated_str, &mut self.gc);
-                        InterpretResult::Ok
-                    }
-                    _ => self.runtime_error("Operands to '+' must be two numbers or strings"),
-                }
+                *left = self
+                    .str_intern_table
+                    .intern_owned(concatenated_str, &mut self.gc);
+                InterpretResult::Ok
             },
             _ => self.runtime_error("Operands to '+' must be two numbers or strings"),
         }
@@ -579,14 +630,19 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         }
     }
 
+    /// captures the local at the given index for the current frame
+    fn capture_local(&mut self, index: usize) -> *mut Upvalue {
+        let abs_index = self.current_frame.stack_start + index;
+        let location = &mut self.stack[abs_index] as *mut Value;
+        self.gc.alloc_upvalue_ptr(Upvalue { location })
+    }
+
+    // TRY: maybe stash the current frame's chunk in a local variable
     fn chunk(&self) -> &Chunk {
         unsafe {
-            // SAFETY: `self.function` is always a valid pointer to a function
-            // object, the memory is managed by the GC
-            match &*self.current_frame.function {
-                Object::Func(Function { chunk, .. }) => chunk,
-                _ => unreachable!("Current frame does not point to a function"),
-            }
+            // SAFETY: Closure function pointers are allocated by GC and remain valid
+            // for the lifetime of the GC which outlives all Closure references
+            &(*self.current_frame.closure).chunk()
         }
     }
 
@@ -596,6 +652,14 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
 
     fn ip_as_mut(&mut self) -> &mut usize {
         &mut self.current_frame.ip
+    }
+
+    fn upvalues(&self) -> &Vec<*mut Upvalue> {
+        unsafe {
+            // SAFETY: Closure pointers are allocated by GC and remain valid
+            // for the lifetime of the GC which outlives all Closure references
+            &(*self.current_frame.closure).upvalues
+        }
     }
 
     fn read_opcode(&mut self) -> OpCode {
@@ -652,12 +716,9 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
 
         for frame in rev_frame_iter {
             let function = unsafe {
-                // SAFETY: we only ever use GC allocated pointers which are
-                // made sure to be valid by the GC
-                match &*frame.function {
-                    Object::Func(func) => func,
-                    _ => unreachable!("Call frame does not point to a function"),
-                }
+                // SAFETY: Closure function pointers are allocated by GC and remain valid
+                // for the lifetime of the GC which outlives all Closure references
+                (*frame.closure).function()
             };
 
             let instr = frame.ip - 1;

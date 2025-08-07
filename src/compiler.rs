@@ -1,12 +1,11 @@
 use super::{
     chunk::{Chunk, OpCode},
     gc::GC,
-    object::{Function, Object},
     scanner::Scanner,
     sym_table::SymbolTable,
     table::StringInternTable,
     token::{Token, TokenKind},
-    value::Value,
+    value::{Function, Value},
 };
 use std::io::Write;
 
@@ -75,14 +74,16 @@ struct Local<'a> {
     name: &'a str,
     depth: usize,
     initialized: bool,
+    captured: bool,
 }
 
 impl<'a> Local<'a> {
-    fn new(name: &'a str, depth: usize, initialized: bool) -> Self {
+    fn new(name: &'a str, depth: usize, initialized: bool, captured: bool) -> Self {
         Local {
             name,
             depth,
             initialized,
+            captured,
         }
     }
 }
@@ -99,11 +100,17 @@ struct LoopContext {
     break_jumps: Vec<usize>, // jump statements to patch to the end of the loop
 }
 
+struct Upvalue {
+    index: usize,
+    is_local: bool,
+}
+
 struct CompilerContext<'a> {
     function: Function,
     loop_contexts: Vec<LoopContext>,
     curr_depth: usize,
     locals: Vec<Local<'a>>,
+    upvalues: Vec<Upvalue>,
 }
 
 pub struct Compiler<'a, 'b, W: Write> {
@@ -117,6 +124,7 @@ pub struct Compiler<'a, 'b, W: Write> {
     locals: Vec<Local<'a>>,
     curr_depth: usize,
     loop_contexts: Vec<LoopContext>,
+    upvalues: Vec<Upvalue>,
 
     // saved contexts for nested functions
     contexts: Vec<CompilerContext<'a>>,
@@ -407,11 +415,13 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             function: Function {
                 name: func_name.to_owned(),
                 arity: 0,
+                upvalue_count: 0,
                 chunk: Chunk::new(),
             },
             locals: Vec::new(),
             curr_depth: 0,
             loop_contexts: Vec::new(),
+            upvalues: Vec::new(),
             had_error: false,
             contexts: Vec::new(),
             gc,
@@ -518,15 +528,11 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         // restore the previous context
         let function = self.pop_context();
 
-        // allocate the function using the GC
-        let func_ptr = self.gc.alloc(Object::Func(function));
+        // allocate the function using the new direct allocation
+        let func_value = self.gc.alloc_function(function);
 
-        // emit the function as a constant
-        self.emit_opcode_with_constant(
-            OpCode::Constant,
-            OpCode::ConstantLong,
-            Value::Object(func_ptr),
-        )?;
+        // emit a `Closure` instruction to wrap the function at runtime
+        self.emit_opcode_with_constant(OpCode::Closure, OpCode::ClosureLong, func_value)?;
 
         // define it as a variable
         if self.curr_depth > 0 {
@@ -865,11 +871,11 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
     fn variable(&mut self, can_assign: bool) -> Result<'a, ()> {
         let name = self.prev_token.lexeme;
-        let local_idx = self.resolve_local(name);
+        let index = Self::resolve_local(&self.locals, name);
 
         // pick local or global ops and final index
-        let (get_op, get_op_long, set_op, set_op_long, idx) = if local_idx != -1 {
-            if !self.locals[local_idx as usize].initialized {
+        let (get_op, get_op_long, set_op, set_op_long, idx) = if index != -1 {
+            if !self.locals[index as usize].initialized {
                 return Err(CompileError::new(
                     self.prev_token.to_owned(),
                     format!("Cannot use variable '{}' in its own initializer", name),
@@ -881,17 +887,15 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 OpCode::GetLocalLong,
                 OpCode::SetLocal,
                 OpCode::SetLocalLong,
-                local_idx as usize,
+                index as usize,
             )
         } else {
-            let global_idx = self.sym_table.resolve(name);
-
             (
                 OpCode::GetGlobal,
                 OpCode::GetGlobalLong,
                 OpCode::SetGlobal,
                 OpCode::SetGlobalLong,
-                global_idx,
+                self.sym_table.resolve(name),
             )
         };
 
@@ -956,7 +960,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 self.emit_opcode_with_constant(
                     OpCode::Constant,
                     OpCode::ConstantLong,
-                    Value::Object(str_ptr),
+                    Value::String(str_ptr),
                 )
             }
             _ => Err(CompileError::new(
@@ -1252,7 +1256,8 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             }
         }
 
-        self.locals.push(Local::new(name, self.curr_depth, false));
+        self.locals
+            .push(Local::new(name, self.curr_depth, false, false));
 
         Ok(self.locals.len() - 1)
     }
@@ -1262,15 +1267,104 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.locals[index].initialized = true;
     }
 
-    /// returns the index of the first declaration of the given local, -1 otherwise
-    fn resolve_local(&mut self, name: &'a str) -> i32 {
-        for (index, local) in self.locals.iter().rev().enumerate() {
+    /// returns the index of the first declaration of the
+    /// given local in the given slice, -1 otherwise
+    fn resolve_local(locals: &[Local], name: &'a str) -> i32 {
+        for (index, local) in locals.iter().rev().enumerate() {
             if local.name == name {
-                return (self.locals.len() - index - 1) as i32;
+                return (locals.len() - index - 1) as i32;
             }
         }
 
         -1
+    }
+
+    /// resolves the given name in the chain of function scopes starting from the current
+    /// function upto the global scope and returns the index of the upvalue if found, -1 otherwise
+    fn resolve_upvalue(&mut self, name: &'a str) -> i32 {
+        // the current context is not stored in `self.contexts` so we've to handle it separately
+        let len = self.contexts.len();
+
+        if len == 0 {
+            // we are at the global scope
+            return -1;
+        }
+
+        // check if the name is a local variable in the scope of the enclosing function
+        let index = Self::resolve_local(&self.contexts.last().unwrap().locals, name);
+
+        if index != -1 {
+            // the name is a local variable in the enclosing function.
+            // mark it as captured
+            let index = index as usize;
+            self.contexts.last_mut().unwrap().locals[index].captured = true;
+
+            return Self::add_upvalue(&mut self.upvalues, true, index) as i32;
+        }
+
+        // check if the name is an upvalue in the enclosing function
+        let index = Self::resolve_upvalue_helper(&mut self.contexts, name);
+
+        if index != -1 {
+            // the name is an upvalue in the enclosing function
+            Self::add_upvalue(&mut self.upvalues, false, index as usize) as i32
+        } else {
+            -1
+        }
+    }
+
+    /// resolves the given name in the chain of function scopes starting from the current
+    /// function upto the global scope and returns the index of the upvalue if found, -1 otherwise
+    fn resolve_upvalue_helper(contexts: &mut [CompilerContext], name: &'a str) -> i32 {
+        // if there is only one context, we've reached the global scope,
+        // so the name must be a global variable (or it is undefined)
+        let len = contexts.len();
+
+        if len == 1 {
+            // we are at the global scope
+            return -1;
+        }
+
+        // check if the name is a local variable in the scope of the enclosing function
+        let index = Self::resolve_local(&contexts[len - 2].locals, name);
+
+        if index != -1 {
+            // the name is a local variable in the enclosing function.
+            // mark it as captured
+            let index = index as usize;
+            contexts[len - 2].locals[index].captured = true;
+
+            return Self::add_upvalue(&mut contexts.last_mut().unwrap().upvalues, true, index)
+                as i32;
+        }
+
+        // check if the name is an upvalue in the enclosing function
+        let index = Self::resolve_upvalue_helper(&mut contexts[..len - 1], name);
+
+        if index != -1 {
+            // the name is an upvalue in the enclosing function
+            Self::add_upvalue(
+                &mut contexts.last_mut().unwrap().upvalues,
+                false,
+                index as usize,
+            ) as i32
+        } else {
+            -1
+        }
+    }
+
+    /// adds the a new upvalue to the current function
+    fn add_upvalue(dest: &mut Vec<Upvalue>, is_local: bool, index: usize) -> usize {
+        // check if the upvalue already exists
+        for (i, upvalue) in dest.iter().enumerate() {
+            if upvalue.is_local == is_local && upvalue.index == index {
+                return i;
+            }
+        }
+
+        // add a new upvalue
+        dest.push(Upvalue { is_local, index });
+        dest.len() - 1
     }
 
     /// increases the current scope depth
@@ -1279,24 +1373,31 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     }
 
     /// decreases the scope depth to the one below the given depth and
-    /// pops all locals upto (including) that depth
+    /// pops all locals upto (including) that depth. Also emits instructions
+    /// to close-over the locals that have been captured by upvalues
     fn end_scope(&mut self) {
-        let mut locals_to_pop = 0;
+        // let mut locals_to_pop = 0;
 
         while let Some(local) = self.locals.last() {
             if local.depth < self.curr_depth {
                 break;
             }
 
+            if local.captured {
+                self.emit_opcode(OpCode::CloseUpvalue);
+            } else {
+                self.emit_opcode(OpCode::Pop);
+            }
+
             self.locals.pop();
-            locals_to_pop += 1;
+            // locals_to_pop += 1;
         }
 
         self.curr_depth -= 1;
 
-        // this call won't throw error because declarations would've already done that
-        let _ =
-            self.emit_opcode_with_num(OpCode::PopN, OpCode::PopNLong, locals_to_pop, "".to_owned());
+        // // this call won't throw error because declarations would've already done that
+        // let _ =
+        //     self.emit_opcode_with_num(OpCode::PopN, OpCode::PopNLong, locals_to_pop, "".to_owned());
     }
 
     /// emits instruction to pop all locals upto (but excluding) the given depth
@@ -1352,12 +1453,14 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 Function {
                     name: func_name.to_owned(),
                     arity: 0,
+                    upvalue_count: 0,
                     chunk: Chunk::new(),
                 },
             ),
             locals: std::mem::replace(&mut self.locals, Vec::new()),
             curr_depth: std::mem::replace(&mut self.curr_depth, 0),
             loop_contexts: std::mem::replace(&mut self.loop_contexts, Vec::new()),
+            upvalues: std::mem::replace(&mut self.upvalues, Vec::new()),
         };
 
         self.contexts.push(saved_context);
@@ -1370,6 +1473,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             Function {
                 name: String::new(),
                 arity: 0,
+                upvalue_count: 0,
                 chunk: Chunk::new(),
             },
         );
@@ -1381,6 +1485,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.locals = saved_context.locals;
         self.curr_depth = saved_context.curr_depth;
         self.loop_contexts = saved_context.loop_contexts;
+        self.upvalues = saved_context.upvalues;
 
         compiled_function
     }

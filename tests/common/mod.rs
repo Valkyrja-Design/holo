@@ -16,9 +16,8 @@ pub fn interpret<T: Write, U: Write>(path: PathBuf, output_stream: &mut T, err_s
 
                 // define native functions as global variables
                 for native_func in &native_funcs {
-                    let native_func_ptr = gc.alloc(object::Object::NativeFunc(native_func.clone()));
                     sym_table.declare(&native_func.name);
-                    globals.push(Some(value::Value::Object(native_func_ptr)));
+                    globals.push(Some(gc.alloc_native(native_func.clone())));
                 }
 
                 let compiler = compiler::Compiler::new(
@@ -41,9 +40,11 @@ pub fn interpret<T: Write, U: Write>(path: PathBuf, output_stream: &mut T, err_s
             };
 
             if let Some(function) = compiled_function {
-                let main_func_ptr = gc.alloc(object::Object::Func(function));
+                let main_closure = gc.alloc_function_ptr(function);
+                let main_closure = gc.alloc_closure_ptr(value::Closure::new(main_closure, 0));
+
                 let mut vm = vm::VM::new(
-                    main_func_ptr,
+                    main_closure,
                     gc,
                     str_intern_table,
                     global_var_names,

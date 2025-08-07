@@ -1,6 +1,6 @@
 use super::value::Value;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct NativeFunc {
     pub name: String,
     arity: u8,

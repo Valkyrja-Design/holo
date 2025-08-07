@@ -359,6 +359,7 @@ mod tests {
     #[test]
     fn scanner_tests() {
         let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
             .join("test_files")
             .join("scanning");
         let entries = std::fs::read_dir(&base_dir).unwrap();
