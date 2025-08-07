@@ -1,7 +1,7 @@
 use super::{
     chunk::{Chunk, OpCode},
     gc,
-    interntable::StringInternTable,
+    intern_table::StringInternTable,
     scanner,
     token::{Token, TokenKind},
     value::Value,
@@ -366,16 +366,13 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
     pub fn compile(mut self) -> Option<Chunk> {
         if let Err(err) = self.advance() {
             self.report_err(err);
+
+            // synchronize the parser state
+            self.synchronize();
         }
 
         while !self.check(TokenKind::Eof) {
-            if let Err(err) = self.declaration() {
-                self.report_err(err);
-            }
-        }
-
-        if let Err(err) = self.consume(TokenKind::Eof, "Expected end of file") {
-            self.report_err(err);
+            self.declaration();
         }
 
         self.finish();
@@ -387,8 +384,13 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         }
     }
 
-    fn declaration(&mut self) -> Result<(), CompileError<'a>> {
-        self.statement()
+    fn declaration(&mut self) {
+        if let Err(err) = self.statement() {
+            self.report_err(err);
+
+            // synchronize the parser state
+            self.synchronize();
+        }
     }
 
     fn statement(&mut self) -> Result<(), CompileError<'a>> {
@@ -397,7 +399,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
                 self.advance()?;
                 self.print_statement()
             }
-            _ => Ok(()),
+            _ => self.expression_statement(),
         }
     }
 
@@ -405,6 +407,14 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         self.expression()?;
         self.consume(TokenKind::Semicolon, "Expected ';' at the end of statement")?;
         self.emit_opcode(OpCode::Print);
+
+        Ok(())
+    }
+
+    fn expression_statement(&mut self) -> Result<(), CompileError<'a>> {
+        self.expression()?;
+        self.consume(TokenKind::Semicolon, "Expected ';' at the end of statement")?;
+        self.emit_opcode(OpCode::Pop);
 
         Ok(())
     }
@@ -593,6 +603,33 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         }
     }
 
+    fn synchronize(&mut self) {
+        loop {
+            match self.curr_token.kind {
+                TokenKind::Eof => return,
+                TokenKind::For => return,
+                TokenKind::If => return,
+                TokenKind::While => return,
+                TokenKind::Fun => return,
+                TokenKind::Var => return,
+                TokenKind::Print => return,
+                TokenKind::Semicolon => {
+                    if let Err(err) = self.advance() {
+                        self.report_err(err);
+                        continue;
+                    }
+
+                    return;
+                }
+                _ => {
+                    if let Err(err) = self.advance() {
+                        self.report_err(err);
+                    }
+                }
+            }
+        }
+    }
+
     fn check(&self, kind: TokenKind) -> bool {
         self.curr_token.kind == kind
     }
@@ -641,7 +678,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 
     fn report_err(&mut self, err: CompileError<'a>) {
         self.had_error = true;
-        eprintln!("[line {}] Error", err.token.line);
+        eprint!("[line {}] Error", err.token.line);
 
         match err.token.kind {
             TokenKind::Eof => eprint!(" at end of file"),

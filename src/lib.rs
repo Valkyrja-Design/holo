@@ -2,7 +2,7 @@ pub mod chunk;
 pub mod compiler;
 pub mod disassembler;
 pub mod gc;
-pub mod interntable;
+pub mod intern_table;
 pub mod object;
 pub mod scanner;
 pub mod token;
@@ -15,7 +15,7 @@ pub fn interpret(path: &str) -> vm::InterpretResult {
     match fs::read_to_string(path) {
         Ok(source) => {
             let mut gc = gc::GC::new();
-            let mut str_intern_table = interntable::StringInternTable::new();
+            let mut str_intern_table = intern_table::StringInternTable::new();
             let compiler = compiler::Compiler::new(&source, &mut gc, &mut str_intern_table);
 
             if let Some(chunk) = compiler.compile() {
@@ -39,7 +39,7 @@ mod tests {
 
     #[test]
     fn arithmetic() {
-        let path = "./tests/expressions/evaluate.holo";
+        let path = "./tests/expressions/arithmetic.holo";
 
         assert_eq!(interpret(path), vm::InterpretResult::Ok);
     }
@@ -91,5 +91,12 @@ mod tests {
         let path = "./tests/expressions/string_interning.holo";
 
         assert_eq!(interpret(path), vm::InterpretResult::Ok);
+    }
+
+    #[test]
+    fn print_err() {
+        let path = "./tests/print/print_err.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::CompileError);
     }
 }

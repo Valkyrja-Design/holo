@@ -22,6 +22,7 @@ pub enum OpCode {
     Less,
     LessEqual,
     Print,
+    Pop,
 }
 
 impl From<u8> for OpCode {
@@ -47,6 +48,7 @@ impl From<u8> for OpCode {
             17 => Self::Less,
             18 => Self::LessEqual,
             19 => Self::Print,
+            20 => Self::Pop,
             _ => panic!("invalid opcode!"),
         }
     }
@@ -75,6 +77,7 @@ impl From<OpCode> for u8 {
             OpCode::Less => 17,
             OpCode::LessEqual => 18,
             OpCode::Print => 19,
+            OpCode::Pop => 20,
         }
     }
 }

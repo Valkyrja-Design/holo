@@ -1,7 +1,7 @@
 use super::{
     chunk::{Chunk, OpCode},
     gc,
-    interntable::StringInternTable,
+    intern_table::StringInternTable,
     object::{ObjRef, Object},
     value::Value,
 };
@@ -194,6 +194,13 @@ impl<'a> VM<'a> {
                     }
 
                     println!("{:#?}", self.stack.pop().unwrap());
+                }
+                OpCode::Pop => {
+                    if self.stack.is_empty() {
+                        return InterpretResult::RuntimeError;
+                    }
+
+                    self.stack.pop();
                 }
             }
         }
