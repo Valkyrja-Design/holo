@@ -1,0 +1,1 @@
+print clock(2); // expect: Runtime error: Expected 0 arguments, but got 1

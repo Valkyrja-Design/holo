@@ -80,11 +80,4 @@ where
 mod tests {
     use crate::interpret;
     use std::io::{stderr, stdout};
-
-    #[test]
-    fn clock() {
-        let path = "test_files/native/clock.holo";
-
-        interpret(path, stdout(), stderr());
-    }
 }
