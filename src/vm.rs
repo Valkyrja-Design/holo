@@ -25,31 +25,27 @@ impl<'a> VM<'a> {
     pub fn run(&mut self) -> InterpretResult {
         loop {
             match self.read_opcode() {
-                chunk::OpCode::OpConstant => {
+                chunk::OpCode::Constant => {
                     let constant = self.read_constant();
-
                     self.stack.push(constant);
-                    // println!("{:#?}", self.read_constant());
                 }
-                chunk::OpCode::OpConstantLong => {
+                chunk::OpCode::ConstantLong => {
                     let constant = self.read_constant_long();
-
                     self.stack.push(constant);
-                    // println!("{:#?}", self.read_constant_long());
                 }
-                chunk::OpCode::OpReturn => {
+                chunk::OpCode::Return => {
                     println!("{:#?}", self.stack.pop().unwrap());
 
                     return InterpretResult::Ok;
                 }
-                chunk::OpCode::OpNegate => {
+                chunk::OpCode::Negate => {
                     if let Some(value) = self.stack.last_mut() {
                         *value = -*value;
                     } else {
                         return InterpretResult::RuntimeError;
                     }
                 }
-                chunk::OpCode::OpAdd => {
+                chunk::OpCode::Add => {
                     let right = self.stack.pop();
                     let left = self.stack.last_mut();
 
@@ -62,7 +58,7 @@ impl<'a> VM<'a> {
 
                     *left += right;
                 }
-                chunk::OpCode::OpSub => {
+                chunk::OpCode::Sub => {
                     let right = self.stack.pop();
                     let left = self.stack.last_mut();
 
@@ -75,7 +71,7 @@ impl<'a> VM<'a> {
 
                     *left -= right;
                 }
-                chunk::OpCode::OpMult => {
+                chunk::OpCode::Mult => {
                     let right = self.stack.pop();
                     let left = self.stack.last_mut();
 
@@ -88,7 +84,7 @@ impl<'a> VM<'a> {
 
                     *left *= right;
                 }
-                chunk::OpCode::OpDivide => {
+                chunk::OpCode::Divide => {
                     let right = self.stack.pop();
                     let left = self.stack.last_mut();
 
@@ -147,18 +143,18 @@ mod tests {
         for _ in 0..256 {
             let idx = chunk.add_constant(1.23) as u8;
 
-            chunk.write_opcode(chunk::OpCode::OpConstant, 1);
+            chunk.write_opcode(chunk::OpCode::Constant, 1);
             chunk.write_byte(idx, 1);
         }
 
         for _ in 256..512 {
             let idx = chunk.add_constant(125.25);
 
-            chunk.write_opcode(chunk::OpCode::OpConstantLong, 2);
+            chunk.write_opcode(chunk::OpCode::ConstantLong, 2);
             chunk.write_as_24bit_int(idx, 2);
         }
 
-        chunk.write_opcode(chunk::OpCode::OpReturn, 3);
+        chunk.write_opcode(chunk::OpCode::Return, 3);
 
         let mut vm = VM::new(&chunk);
 
@@ -172,23 +168,23 @@ mod tests {
         for _ in 0..2 {
             let idx = chunk.add_constant(1.23) as u8;
 
-            chunk.write_opcode(chunk::OpCode::OpConstant, 1);
+            chunk.write_opcode(chunk::OpCode::Constant, 1);
             chunk.write_byte(idx, 1);
         }
 
         for _ in 2..4 {
             let idx = chunk.add_constant(125.25);
 
-            chunk.write_opcode(chunk::OpCode::OpConstantLong, 2);
+            chunk.write_opcode(chunk::OpCode::ConstantLong, 2);
             chunk.write_as_24bit_int(idx, 2);
         }
 
-        chunk.write_opcode(chunk::OpCode::OpNegate, 3);
-        chunk.write_opcode(chunk::OpCode::OpAdd, 4);
-        chunk.write_opcode(chunk::OpCode::OpSub, 5);
-        chunk.write_opcode(chunk::OpCode::OpDivide, 6);
+        chunk.write_opcode(chunk::OpCode::Negate, 3);
+        chunk.write_opcode(chunk::OpCode::Add, 4);
+        chunk.write_opcode(chunk::OpCode::Sub, 5);
+        chunk.write_opcode(chunk::OpCode::Divide, 6);
 
-        chunk.write_opcode(chunk::OpCode::OpReturn, 7);
+        chunk.write_opcode(chunk::OpCode::Return, 7);
 
         let mut vm = VM::new(&chunk);
 
@@ -202,14 +198,14 @@ mod tests {
 
         let idx = chunk.add_constant(125.25);
 
-        chunk.write_opcode(chunk::OpCode::OpConstantLong, 2);
+        chunk.write_opcode(chunk::OpCode::ConstantLong, 2);
         chunk.write_as_24bit_int(idx, 2);
 
         for _ in 0..INSTR_COUNT {
-            chunk.write_opcode(chunk::OpCode::OpNegate, 3);
+            chunk.write_opcode(chunk::OpCode::Negate, 3);
         }
 
-        chunk.write_opcode(chunk::OpCode::OpReturn, 3);
+        chunk.write_opcode(chunk::OpCode::Return, 3);
 
         let mut vm = VM::new(&chunk);
 

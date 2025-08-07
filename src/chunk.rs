@@ -2,27 +2,27 @@ use super::value;
 
 #[derive(Clone, Copy)]
 pub enum OpCode {
-    OpConstant,
-    OpConstantLong,
-    OpReturn,
-    OpNegate,
-    OpAdd,
-    OpSub,
-    OpMult,
-    OpDivide,
+    Constant,
+    ConstantLong,
+    Return,
+    Negate,
+    Add,
+    Sub,
+    Mult,
+    Divide,
 }
 
 impl From<u8> for OpCode {
     fn from(value: u8) -> Self {
         match value {
-            0 => OpCode::OpConstant,
-            1 => OpCode::OpConstantLong,
-            2 => OpCode::OpReturn,
-            3 => OpCode::OpNegate,
-            4 => OpCode::OpAdd,
-            5 => OpCode::OpSub,
-            6 => OpCode::OpMult,
-            7 => OpCode::OpDivide,
+            0 => OpCode::Constant,
+            1 => OpCode::ConstantLong,
+            2 => OpCode::Return,
+            3 => OpCode::Negate,
+            4 => OpCode::Add,
+            5 => OpCode::Sub,
+            6 => OpCode::Mult,
+            7 => OpCode::Divide,
             _ => panic!("invalid opcode!"),
         }
     }
@@ -31,14 +31,14 @@ impl From<u8> for OpCode {
 impl From<OpCode> for u8 {
     fn from(value: OpCode) -> u8 {
         match value {
-            OpCode::OpConstant => 0,
-            OpCode::OpConstantLong => 1,
-            OpCode::OpReturn => 2,
-            OpCode::OpNegate => 3,
-            OpCode::OpAdd => 4,
-            OpCode::OpSub => 5,
-            OpCode::OpMult => 6,
-            OpCode::OpDivide => 7,
+            OpCode::Constant => 0,
+            OpCode::ConstantLong => 1,
+            OpCode::Return => 2,
+            OpCode::Negate => 3,
+            OpCode::Add => 4,
+            OpCode::Sub => 5,
+            OpCode::Mult => 6,
+            OpCode::Divide => 7,
         }
     }
 }

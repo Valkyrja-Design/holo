@@ -16,21 +16,21 @@ pub fn disassemble_instr(chunk: &chunk::Chunk, offset: usize) -> usize {
     let instr = chunk.code[offset];
 
     match chunk::OpCode::from(instr) {
-        chunk::OpCode::OpConstant => const_instr(chunk, offset),
-        chunk::OpCode::OpConstantLong => const_long_instr(chunk, offset),
-        chunk::OpCode::OpReturn => simple_instr("OP_RETURN", offset),
-        chunk::OpCode::OpNegate => simple_instr("OP_NEGATE", offset),
-        chunk::OpCode::OpAdd => simple_instr("OP_ADD", offset),
-        chunk::OpCode::OpSub => simple_instr("OP_SUB", offset),
-        chunk::OpCode::OpMult => simple_instr("OP_MULT", offset),
-        chunk::OpCode::OpDivide => simple_instr("OP_DIVIDE", offset),
+        chunk::OpCode::Constant => const_instr(chunk, offset),
+        chunk::OpCode::ConstantLong => const_long_instr(chunk, offset),
+        chunk::OpCode::Return => simple_instr("RETURN", offset),
+        chunk::OpCode::Negate => simple_instr("NEGATE", offset),
+        chunk::OpCode::Add => simple_instr("ADD", offset),
+        chunk::OpCode::Sub => simple_instr("SUB", offset),
+        chunk::OpCode::Mult => simple_instr("MULT", offset),
+        chunk::OpCode::Divide => simple_instr("DIVIDE", offset),
     }
 }
 
 fn const_instr(chunk: &chunk::Chunk, offset: usize) -> usize {
     let idx = chunk.code[offset + 1];
 
-    println!("OP_CONSTANT {}", chunk.constants[idx as usize]);
+    println!("CONSTANT {}", chunk.constants[idx as usize]);
 
     offset + 2
 }
@@ -38,7 +38,7 @@ fn const_instr(chunk: &chunk::Chunk, offset: usize) -> usize {
 fn const_long_instr(chunk: &chunk::Chunk, offset: usize) -> usize {
     let idx = chunk::Chunk::read_as_24bit_int(&chunk.code[offset + 1..offset + 4]);
 
-    println!("OP_CONSTANT_LONG {}", chunk.constants[idx]);
+    println!("CONSTANT_LONG {}", chunk.constants[idx]);
 
     offset + 4
 }
@@ -60,35 +60,36 @@ mod tests {
         for _ in 0..2 {
             let idx = chunk.add_constant(1.23) as u8;
 
-            chunk.write_opcode(chunk::OpCode::OpConstant, 1);
+            chunk.write_opcode(chunk::OpCode::Constant, 1);
             chunk.write_byte(idx, 1);
         }
 
         for _ in 2..4 {
             let idx = chunk.add_constant(125.25);
 
-            chunk.write_opcode(chunk::OpCode::OpConstantLong, 2);
+            chunk.write_opcode(chunk::OpCode::ConstantLong, 2);
             chunk.write_as_24bit_int(idx, 2);
         }
 
-        chunk.write_opcode(chunk::OpCode::OpNegate, 3);
-        chunk.write_opcode(chunk::OpCode::OpAdd, 4);
-        chunk.write_opcode(chunk::OpCode::OpSub, 5);
-        chunk.write_opcode(chunk::OpCode::OpDivide, 6);
+        chunk.write_opcode(chunk::OpCode::Negate, 3);
+        chunk.write_opcode(chunk::OpCode::Add, 4);
+        chunk.write_opcode(chunk::OpCode::Sub, 5);
+        chunk.write_opcode(chunk::OpCode::Divide, 6);
 
-        chunk.write_opcode(chunk::OpCode::OpReturn, 7);
+        chunk.write_opcode(chunk::OpCode::Return, 7);
 
         disassemble(&chunk, "simple test chunk");
 
         // expected:
-        // 0000 0001 OP_CONSTANT 1.23
-        // 0002 0001 OP_CONSTANT 1.23
-        // 0004 0002 OP_CONSTANT_LONG 125.25
-        // 0008 0002 OP_CONSTANT_LONG 125.25
-        // 0012 0003 OP_NEGATE
-        // 0013 0004 OP_ADD
-        // 0014 0005 OP_SUB
-        // 0015 0006 OP_DIVIDE
-        // 0016 0007 OP_RETURN
+        // == simple test chunk ==
+        // 0000 0001 CONSTANT 1.23
+        // 0002 0001 CONSTANT 1.23
+        // 0004 0002 CONSTANT_LONG 125.25
+        // 0008 0002 CONSTANT_LONG 125.25
+        // 0012 0003 NEGATE
+        // 0013 0004 ADD
+        // 0014 0005 SUB
+        // 0015 0006 DIVIDE
+        // 0016 0007 RETURN
     }
 }

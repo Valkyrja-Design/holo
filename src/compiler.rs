@@ -394,7 +394,7 @@ impl<'a> Compiler<'a> {
 
         // emit the operator instruction
         match operator_kind {
-            token::TokenKind::Minus => self.emit_opcode(chunk::OpCode::OpNegate),
+            token::TokenKind::Minus => self.emit_opcode(chunk::OpCode::Negate),
             _ => {
                 return Err(CompileError::new(
                     self.prev_token.clone(),
@@ -415,10 +415,10 @@ impl<'a> Compiler<'a> {
 
         // emit the operator instruction
         match operator_kind {
-            token::TokenKind::Plus => self.emit_opcode(chunk::OpCode::OpAdd),
-            token::TokenKind::Minus => self.emit_opcode(chunk::OpCode::OpSub),
-            token::TokenKind::Star => self.emit_opcode(chunk::OpCode::OpMult),
-            token::TokenKind::Slash => self.emit_opcode(chunk::OpCode::OpDivide),
+            token::TokenKind::Plus => self.emit_opcode(chunk::OpCode::Add),
+            token::TokenKind::Minus => self.emit_opcode(chunk::OpCode::Sub),
+            token::TokenKind::Star => self.emit_opcode(chunk::OpCode::Mult),
+            token::TokenKind::Slash => self.emit_opcode(chunk::OpCode::Divide),
             _ => {
                 return Err(CompileError::new(
                     operator_token,
@@ -506,7 +506,7 @@ impl<'a> Compiler<'a> {
 
     fn emit_return(&mut self) {
         self.chunk
-            .write_opcode(chunk::OpCode::OpReturn, self.prev_token.line);
+            .write_opcode(chunk::OpCode::Return, self.prev_token.line);
     }
 
     fn emit_constant(&mut self, value: value::Value) -> Result<(), CompileError<'a>> {
@@ -515,11 +515,11 @@ impl<'a> Compiler<'a> {
         let idx = self.chunk.add_constant(value);
 
         if idx <= u8::MAX as usize {
-            self.emit_opcode(chunk::OpCode::OpConstant);
+            self.emit_opcode(chunk::OpCode::Constant);
             self.emit_byte(idx as u8);
             Ok(())
         } else if idx <= MAX24BIT {
-            self.emit_opcode(chunk::OpCode::OpConstantLong);
+            self.emit_opcode(chunk::OpCode::ConstantLong);
             self.chunk.write_as_24bit_int(idx, self.prev_token.line);
             Ok(())
         } else {
