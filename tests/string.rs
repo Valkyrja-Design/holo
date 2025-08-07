@@ -41,14 +41,16 @@ fn string() {
             )
         });
 
-        let full_output = errors.trim_end().to_owned() + "\n" + output.trim_end();
+        let full_output = errors.trim_end().to_owned() + "\n" + &output;
+        let normalized_output = full_output.trim().replace("\r\n", "\n");
+        let normalized_expected = expected.trim().replace("\r\n", "\n");
 
         // let mut file = fs::File::create(expected_path).unwrap();
         // let _err = file.write(full_output.trim().as_bytes());
 
         assert_eq!(
-            full_output.trim(),
-            expected.trim(),
+            normalized_output,
+            normalized_expected,
             "Output mismatch for test `{}`",
             path.as_os_str().to_str().unwrap(),
         );
