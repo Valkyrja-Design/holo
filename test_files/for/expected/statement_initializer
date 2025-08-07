@@ -1,2 +1,2 @@
 [line 3] Error at '{': Expected expression
-[line 3] Error at ')': Expected ';' after expression
+[line 3] Error at ')': Expected ';' at the end of statement

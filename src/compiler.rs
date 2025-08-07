@@ -7,7 +7,7 @@ use super::{
     token::{Token, TokenKind},
     value::Value,
 };
-use std::io::Write;
+use std::{collections::BTreeMap, io::Write};
 
 struct CompileError<'a> {
     token: Token<'a>,
@@ -467,6 +467,14 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 self.advance()?;
                 self.if_stmt()
             }
+            TokenKind::While => {
+                self.advance()?;
+                self.while_stmt()
+            }
+            TokenKind::For => {
+                self.advance()?;
+                self.for_stmt()
+            }
             _ => self.expression_statement(),
         }
     }
@@ -527,6 +535,98 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
         // end of `else` branch
         self.patch_jump(else_jump)
+    }
+
+    fn while_stmt(&mut self) -> Result<(), CompileError<'a>> {
+        let loop_start = self.chunk.code.len();
+
+        self.consume(TokenKind::LeftParen, "Expected '('")?;
+        // compile the condition
+        self.expression()?;
+        self.consume(TokenKind::RightParen, "Expected ')'")?;
+
+        let exit_jump = self.emit_jump(OpCode::JumpIfFalse);
+
+        // pop the condition
+        self.emit_opcode(OpCode::Pop);
+        // compile the body
+        self.statement()?;
+
+        self.emit_loop(loop_start)?;
+        self.patch_jump(exit_jump)?;
+
+        self.emit_opcode(OpCode::Pop);
+        Ok(())
+    }
+
+    fn for_stmt(&mut self) -> Result<(), CompileError<'a>> {
+        // start a new scope for the initializer
+        self.begin_scope();
+
+        self.consume(TokenKind::LeftParen, "Expected '('")?;
+
+        // compile the initializer, if any. It can be a variable declaration,
+        // expression statement or just ';'
+        match self.curr_token.kind {
+            TokenKind::Var => {
+                self.advance()?;
+                self.var_declaration()?;
+            }
+            TokenKind::Semicolon => {
+                self.advance()?;
+            }
+            _ => {
+                self.expression_statement()?;
+            }
+        }
+
+        let mut loop_start = self.chunk.code.len();
+        let mut exit_jump: isize = -1;
+
+        // compile the condition, if any
+        if !self.check(TokenKind::Semicolon) {
+            self.expression()?;
+            self.consume(TokenKind::Semicolon, "Expected ';' at the end of condition")?;
+
+            // we have the condition value on top of the stack
+            exit_jump = self.emit_jump(OpCode::JumpIfFalse) as isize;
+            self.emit_opcode(OpCode::Pop);
+        }
+
+        // compile the update expression, if any
+        if !self.check(TokenKind::RightParen) {
+            // need to jump over the update expression after running the condition
+            let update_jump = self.emit_jump(OpCode::Jump);
+            let update_start = self.chunk.code.len();
+
+            self.expression()?;
+            // we also have to discard its value
+            self.emit_opcode(OpCode::Pop);
+
+            // also need to jump back to condition
+            self.emit_loop(loop_start)?;
+            loop_start = update_start;
+
+            self.patch_jump(update_jump)?;
+        }
+
+        self.consume(TokenKind::RightParen, "Expected ')'")?;
+
+        // compile the body
+        self.statement()?;
+
+        // append a jump back to the start of the loop
+        self.emit_loop(loop_start)?;
+
+        // ok, the loop body is done, now patch the exit jump if present
+        if exit_jump != -1 {
+            self.patch_jump(exit_jump as usize)?;
+            // also pop the condition
+            self.emit_opcode(OpCode::Pop);
+        }
+
+        self.end_scope();
+        Ok(())
     }
 
     fn expression_statement(&mut self) -> Result<(), CompileError<'a>> {
@@ -941,7 +1041,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     fn patch_jump(&mut self, offset: usize) -> Result<(), CompileError<'a>> {
         const BYTE_MASK: usize = (1usize << 8) - 1;
 
-        let jump_dist = self.chunk.code.len() - offset - 2;
+        let jump_dist = self.chunk.code.len() - offset - 2; // -2 for the operands
 
         if jump_dist > u16::MAX as usize {
             Err(CompileError::new(
@@ -951,6 +1051,26 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         } else {
             self.chunk.code[offset] = ((jump_dist >> 8) & BYTE_MASK) as u8;
             self.chunk.code[offset + 1] = (jump_dist & BYTE_MASK) as u8;
+            Ok(())
+        }
+    }
+
+    fn emit_loop(&mut self, loop_start: usize) -> Result<(), CompileError<'a>> {
+        // jumps to the start of the loop
+        const BYTE_MASK: usize = (1usize << 8) - 1;
+
+        self.emit_opcode(OpCode::Loop);
+
+        let jump_dist = self.chunk.code.len() - loop_start + 2; // +2 for the operands
+
+        if jump_dist > u16::MAX as usize {
+            Err(CompileError::new(
+                self.prev_token.clone(),
+                "Too much jump distance".to_string(),
+            ))
+        } else {
+            self.emit_byte(((jump_dist >> 8) & BYTE_MASK) as u8);
+            self.emit_byte((jump_dist & BYTE_MASK) as u8);
             Ok(())
         }
     }

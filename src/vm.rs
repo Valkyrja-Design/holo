@@ -1,3 +1,5 @@
+use crate::disassembler::disassemble;
+
 use super::{
     chunk::{Chunk, OpCode},
     gc,
@@ -49,6 +51,8 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
     }
 
     pub fn run(&mut self) -> InterpretResult {
+        // disassemble(&self.chunk, "vm chunk");
+
         loop {
             match self.read_opcode() {
                 OpCode::Constant => {
@@ -330,6 +334,11 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     let jump_offset = self.read_int16();
 
                     self.ip += jump_offset;
+                }
+                OpCode::Loop => {
+                    let jump_offset = self.read_int16();
+
+                    self.ip -= jump_offset;
                 }
             }
         }

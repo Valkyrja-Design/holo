@@ -1,1 +1,7 @@
-"i"
+[line 1] Error at 'fun': Expected expression
+[line 2] Error at ';': Expected expression
+[line 4] Error at 'fun': Expected expression
+[line 4] Error at '}': Expected expression
+[line 6] Error at '}': Expected expression
+[line 9] Error at '(': Expected ';' at the end of statement
+[line 10] Error at 'h': Cannot use variable 'h' in its own initializer

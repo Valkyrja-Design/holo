@@ -26,11 +26,11 @@ statement           → expression_stmt
 expression_stmt     → expression ";" ;
 print_stmt          → "print" expression ";" ;
 block               → "{" declaration* "}" ;
-if_stmt             → "if" "(" expression ")" declaration
-                    ( "else" declaration )? ;
-while_stmt          → "while" "(" expression ")" declaration
+if_stmt             → "if" "(" expression ")" statement
+                    ( "else" statement )? ;
+while_stmt          → "while" "(" expression ")" statement
 for_stmt            → "for" "(" ( var_decl | expression_stmt | ";")
-                    expression? ";" expression? ")" declaration ;
+                    expression? ";" expression? ")" statement ;
 return_stmt         → "return" expression? ";" ;
 
 expression          → comma ;
