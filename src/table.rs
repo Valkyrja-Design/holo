@@ -1,6 +1,7 @@
 use super::{
-    gc,
+    gc::GC,
     object::{ObjRef, Object},
+    value::Value,
 };
 use std::{collections::HashMap, fmt::Debug};
 use std::{
@@ -13,9 +14,10 @@ use std::{
 // immutable, GC should remove it if the corresponding mem
 // is freed
 #[derive(Clone, Copy)]
-struct InternKey(NonNull<str>);
+struct StrKey(NonNull<str>);
 
-impl Hash for InternKey {
+// TEST: maybe store hash in the key itself?
+impl Hash for StrKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
         // SAFETY: the pointer must refer to a valid and live `str`.
         // That's the responsibility of the GC
@@ -23,7 +25,7 @@ impl Hash for InternKey {
     }
 }
 
-impl PartialEq for InternKey {
+impl PartialEq for StrKey {
     fn eq(&self, other: &Self) -> bool {
         // SAFETY: the pointer must refer to a valid and live `str`.
         // That's the responsibility of the GC
@@ -31,36 +33,32 @@ impl PartialEq for InternKey {
     }
 }
 
-impl Eq for InternKey {}
+impl Eq for StrKey {}
 
-pub struct StringInternTable {
-    table: HashMap<InternKey, ObjRef>,
-}
+pub struct StringInternTable(HashMap<StrKey, ObjRef>);
 
 impl StringInternTable {
     pub fn new() -> Self {
-        Self {
-            table: HashMap::new(),
-        }
+        Self(HashMap::new())
     }
 
-    pub fn intern_slice(&mut self, value: &str, gc: &mut gc::GC) -> ObjRef {
+    pub fn intern_slice(&mut self, value: &str, gc: &mut GC) -> ObjRef {
         // only uses the `value` for comparison purposes
-        let key = InternKey(NonNull::from(value));
+        let key = StrKey(NonNull::from(value));
         self.intern_inner(key, || gc.alloc(Object::Str(value.to_owned())))
     }
 
-    pub fn intern_owned(&mut self, value: String, gc: &mut gc::GC) -> ObjRef {
+    pub fn intern_owned(&mut self, value: String, gc: &mut GC) -> ObjRef {
         // only uses the `value` for comparison purposes
-        let key = InternKey(NonNull::from(value.as_str()));
+        let key = StrKey(NonNull::from(value.as_str()));
         self.intern_inner(key, || gc.alloc(Object::Str(value)))
     }
 
-    fn intern_inner<F>(&mut self, key: InternKey, alloc: F) -> ObjRef
+    fn intern_inner<F>(&mut self, key: StrKey, alloc: F) -> ObjRef
     where
         F: FnOnce() -> ObjRef,
     {
-        if let Some(&handle) = self.table.get(&key) {
+        if let Some(&handle) = self.0.get(&key) {
             return handle;
         }
 
@@ -69,11 +67,12 @@ impl StringInternTable {
     }
 
     fn insert_handle(&mut self, handle: ObjRef) -> ObjRef {
+        // SAFETY: the GC makes sure that the handle is valid
         unsafe {
             match &*handle {
                 Object::Str(s) => {
-                    let key = InternKey(NonNull::from(s.as_str()));
-                    self.table.insert(key, handle);
+                    let key = StrKey(NonNull::from(s.as_str()));
+                    self.0.insert(key, handle);
 
                     handle
                 }
@@ -87,7 +86,7 @@ impl Debug for StringInternTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut dbg = f.debug_set();
 
-        for &handle in self.table.values() {
+        for &handle in self.0.values() {
             // SAFETY: This is only called while the VM is running and
             // the GC makes sure `ObjRef`s in the table are alive and valid
             unsafe {
@@ -95,6 +94,34 @@ impl Debug for StringInternTable {
                     dbg.entry(s);
                 }
             }
+        }
+
+        dbg.finish()
+    }
+}
+
+pub struct StringTable(HashMap<StrKey, Value>);
+
+impl StringTable {
+    pub fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    pub fn insert(&mut self, key: NonNull<str>, value: Value) -> Option<Value> {
+        self.0.insert(StrKey(key), value)
+    }
+
+    pub fn get(&self, key: NonNull<str>) -> Option<&Value> {
+        self.0.get(&StrKey(key))
+    }
+}
+
+impl Debug for StringTable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut dbg = f.debug_set();
+
+        for value in self.0.values() {
+            dbg.entry(value);
         }
 
         dbg.finish()

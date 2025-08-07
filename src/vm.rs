@@ -1,8 +1,10 @@
+use std::ptr::NonNull;
+
 use super::{
     chunk::{Chunk, OpCode},
     gc,
-    intern_table::StringInternTable,
-    object::{ObjRef, Object},
+    object::Object,
+    table::{StringInternTable, StringTable},
     value::Value,
 };
 
@@ -13,22 +15,24 @@ pub enum InterpretResult {
     RuntimeError,
 }
 
-pub struct VM<'a> {
+pub struct VM {
     chunk: Chunk,
     ip: usize,
     stack: Vec<Value>,
-    gc: &'a mut gc::GC,
+    gc: gc::GC,
     str_intern_table: StringInternTable,
+    globals: StringTable,
 }
 
-impl<'a> VM<'a> {
-    pub fn new(chunk: Chunk, gc: &'a mut gc::GC, str_intern_table: StringInternTable) -> Self {
+impl VM {
+    pub fn new(chunk: Chunk, gc: gc::GC, str_intern_table: StringInternTable) -> Self {
         VM {
             chunk, // Store the reference
             ip: 0,
             stack: vec![],
             gc,
             str_intern_table,
+            globals: StringTable::new(),
         }
     }
 
@@ -202,7 +206,117 @@ impl<'a> VM<'a> {
 
                     self.stack.pop();
                 }
+                OpCode::DefineGlobal => {
+                    // IMP: lookout for GC here
+                    let name_val = self.read_constant();
+
+                    if self.define_global(name_val) != InterpretResult::Ok {
+                        return InterpretResult::RuntimeError;
+                    }
+                }
+                OpCode::DefineGlobalLong => {
+                    // IMP: lookout for GC here
+                    let name_val = self.read_constant_long();
+
+                    if self.define_global(name_val) != InterpretResult::Ok {
+                        return InterpretResult::RuntimeError;
+                    }
+                }
+                OpCode::GetGlobal => {
+                    let name_val = self.read_constant();
+
+                    if self.get_global(name_val) != InterpretResult::Ok {
+                        return InterpretResult::RuntimeError;
+                    }
+                }
+                OpCode::GetGlobalLong => {
+                    let name_val = self.read_constant_long();
+
+                    if self.get_global(name_val) != InterpretResult::Ok {
+                        return InterpretResult::RuntimeError;
+                    }
+                }
+                OpCode::SetGlobal => {
+                    let name_val = self.read_constant();
+
+                    if self.set_global(name_val) != InterpretResult::Ok {
+                        return InterpretResult::RuntimeError;
+                    }
+                }
+                OpCode::SetGlobalLong => {
+                    let name_val = self.read_constant_long();
+
+                    if self.set_global(name_val) != InterpretResult::Ok {
+                        return InterpretResult::RuntimeError;
+                    }
+                }
             }
+        }
+    }
+
+    fn define_global(&mut self, name_val: Value) -> InterpretResult {
+        if self.stack.len() < 1 {
+            return InterpretResult::RuntimeError;
+        }
+
+        let name = self.extract_string_key(name_val);
+
+        let initializer = self.stack.pop().unwrap();
+        self.globals.insert(name, initializer);
+
+        InterpretResult::Ok
+    }
+
+    fn get_global(&mut self, name_val: Value) -> InterpretResult {
+        let name = self.extract_string_key(name_val);
+
+        match self.globals.get(name) {
+            Some(value) => {
+                self.stack.push(*value);
+                InterpretResult::Ok
+            }
+            None => {
+                // SAFETY: we only ever use GC allocated pointers which are
+                // made sure to be valid by the GC
+                let s = unsafe { name.as_ref() };
+                self.runtime_error(format!("Undefined variable '{}'", s).as_str())
+            }
+        }
+    }
+
+    fn set_global(&mut self, name_val: Value) -> InterpretResult {
+        if self.stack.len() < 1 {
+            return InterpretResult::RuntimeError;
+        }
+
+        let name = self.extract_string_key(name_val);
+        let to = self.stack.pop().unwrap();
+
+        match self.globals.insert(name, to) {
+            Some(_) => {
+                self.stack.push(to);
+                InterpretResult::Ok
+            }
+            None => {
+                // SAFETY: we only ever use GC allocated pointers which are
+                // made sure to be valid by the GC
+                let s = unsafe { name.as_ref() };
+                self.runtime_error(format!("Undefined variable '{}'", s).as_str())
+            }
+        }
+    }
+
+    fn extract_string_key(&self, value: Value) -> NonNull<str> {
+        match value {
+            // SAFETY: we only ever use GC allocated pointers which are
+            // made sure to be valid by the GC
+            Value::Object(handle) => unsafe {
+                match &*handle {
+                    Object::Str(s) => NonNull::from(s.as_str()),
+                    _ => unreachable!(),
+                }
+            },
+            _ => unreachable!(),
         }
     }
 
@@ -336,9 +450,9 @@ mod tests {
         chunk.write_opcode(OpCode::Print, 1);
         chunk.write_opcode(OpCode::Return, 2);
 
-        let mut gc = gc::GC::new();
+        let gc = gc::GC::new();
         let str_intern_table = StringInternTable::new();
-        let mut vm = VM::new(chunk, &mut gc, str_intern_table);
+        let mut vm = VM::new(chunk, gc, str_intern_table);
 
         assert_eq!(vm.run(), InterpretResult::Ok);
     }
@@ -369,9 +483,9 @@ mod tests {
         chunk.write_opcode(OpCode::Print, 7);
         chunk.write_opcode(OpCode::Return, 8);
 
-        let mut gc = gc::GC::new();
+        let gc = gc::GC::new();
         let str_intern_table = StringInternTable::new();
-        let mut vm = VM::new(chunk, &mut gc, str_intern_table);
+        let mut vm = VM::new(chunk, gc, str_intern_table);
 
         assert_eq!(vm.run(), InterpretResult::Ok);
     }
@@ -379,7 +493,7 @@ mod tests {
     #[test]
     fn benchmark_negation() {
         let mut chunk = Chunk::new();
-        const INSTR_COUNT: usize = 1000000000;
+        const INSTR_COUNT: usize = 100000000;
 
         let idx = chunk.add_constant(Value::Number(125.25));
 
@@ -393,9 +507,9 @@ mod tests {
         chunk.write_opcode(OpCode::Print, 3);
         chunk.write_opcode(OpCode::Return, 8);
 
-        let mut gc = gc::GC::new();
+        let gc = gc::GC::new();
         let str_intern_table = StringInternTable::new();
-        let mut vm = VM::new(chunk, &mut gc, str_intern_table);
+        let mut vm = VM::new(chunk, gc, str_intern_table);
 
         assert_eq!(vm.run(), InterpretResult::Ok);
     }

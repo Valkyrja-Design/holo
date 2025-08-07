@@ -1,8 +1,9 @@
 use super::{
     chunk::{Chunk, OpCode},
     gc,
-    intern_table::StringInternTable,
+    object::Object,
     scanner,
+    table::StringInternTable,
     token::{Token, TokenKind},
     value::Value,
 };
@@ -78,8 +79,8 @@ pub struct Compiler<'a, 'b, 'c> {
 }
 
 struct ParseRule<'a, 'b, 'c> {
-    prefix_rule: Option<fn(&mut Compiler<'a, 'b, 'c>) -> Result<(), CompileError<'a>>>,
-    infix_rule: Option<fn(&mut Compiler<'a, 'b, 'c>) -> Result<(), CompileError<'a>>>,
+    prefix_rule: Option<fn(&mut Compiler<'a, 'b, 'c>, bool) -> Result<(), CompileError<'a>>>,
+    infix_rule: Option<fn(&mut Compiler<'a, 'b, 'c>, bool) -> Result<(), CompileError<'a>>>,
     precedence: Precedence,
 }
 
@@ -221,7 +222,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             precedence: Precedence::None,
         }, // SlashEqual
         ParseRule {
-            prefix_rule: None,
+            prefix_rule: Some(Self::variable),
             infix_rule: None,
             precedence: Precedence::None,
         }, // Identifier
@@ -372,7 +373,12 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         }
 
         while !self.check(TokenKind::Eof) {
-            self.declaration();
+            if let Err(err) = self.declaration() {
+                self.report_err(err);
+
+                // synchronize the parser state
+                self.synchronize();
+            }
         }
 
         self.finish();
@@ -384,13 +390,37 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         }
     }
 
-    fn declaration(&mut self) {
-        if let Err(err) = self.statement() {
-            self.report_err(err);
-
-            // synchronize the parser state
-            self.synchronize();
+    fn declaration(&mut self) -> Result<(), CompileError<'a>> {
+        match self.curr_token.kind {
+            TokenKind::Var => {
+                self.advance()?;
+                self.var_declaration()
+            }
+            _ => self.statement(),
         }
+    }
+
+    fn var_declaration(&mut self) -> Result<(), CompileError<'a>> {
+        self.consume(TokenKind::Identifier, "Expected variable name")?;
+
+        let obj = Object::Str(self.prev_token.lexeme.to_owned());
+        let obj_ref = self.gc.alloc(obj);
+
+        // consume the initializer, if any
+        if self.check(TokenKind::Equal) {
+            self.advance()?;
+            self.expression()?;
+        } else {
+            self.emit_opcode(OpCode::Nil);
+        }
+
+        self.consume(TokenKind::Semicolon, "Expected ';' at the end of statement")?;
+
+        self.emit_opcode_with_constant(
+            OpCode::DefineGlobal,
+            OpCode::DefineGlobalLong,
+            Value::Object(obj_ref),
+        )
     }
 
     fn statement(&mut self) -> Result<(), CompileError<'a>> {
@@ -423,14 +453,41 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         self.parse_precedence(Precedence::Assignment)
     }
 
-    fn number(&mut self) -> Result<(), CompileError<'a>> {
+    fn variable(&mut self, can_assign: bool) -> Result<(), CompileError<'a>> {
+        let obj = Object::Str(self.prev_token.lexeme.to_owned());
+        let obj_ref = self.gc.alloc(obj);
+
+        match self.curr_token.kind {
+            TokenKind::Equal if can_assign => {
+                // this is an assignment expr
+                self.advance()?;
+                self.expression()?;
+                self.emit_opcode_with_constant(
+                    OpCode::SetGlobal,
+                    OpCode::SetGlobalLong,
+                    Value::Object(obj_ref),
+                )
+            }
+            _ => self.emit_opcode_with_constant(
+                OpCode::GetGlobal,
+                OpCode::GetGlobalLong,
+                Value::Object(obj_ref),
+            ),
+        }
+    }
+
+    fn number(&mut self, _: bool) -> Result<(), CompileError<'a>> {
         match self.prev_token.lexeme.parse::<f64>() {
-            Ok(value) => self.emit_constant(Value::Number(value)),
+            Ok(value) => self.emit_opcode_with_constant(
+                OpCode::Constant,
+                OpCode::ConstantLong,
+                Value::Number(value),
+            ),
             Err(err) => Err(CompileError::new(self.prev_token.clone(), err.to_string())),
         }
     }
 
-    fn literal(&mut self) -> Result<(), CompileError<'a>> {
+    fn literal(&mut self, _: bool) -> Result<(), CompileError<'a>> {
         match self.prev_token.kind {
             TokenKind::Nil => {
                 self.emit_opcode(OpCode::Nil);
@@ -451,13 +508,17 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         }
     }
 
-    fn string(&mut self) -> Result<(), CompileError<'a>> {
+    fn string(&mut self, _: bool) -> Result<(), CompileError<'a>> {
         match self.prev_token.kind {
             TokenKind::String => {
                 let s = &self.prev_token.lexeme[1..self.prev_token.lexeme.len() - 1];
                 let str_ptr = self.str_intern_table.intern_slice(s, self.gc);
 
-                self.emit_constant(Value::Object(str_ptr))
+                self.emit_opcode_with_constant(
+                    OpCode::Constant,
+                    OpCode::ConstantLong,
+                    Value::Object(str_ptr),
+                )
             }
             _ => Err(CompileError::new(
                 self.prev_token.clone(),
@@ -466,12 +527,12 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         }
     }
 
-    fn grouping(&mut self) -> Result<(), CompileError<'a>> {
+    fn grouping(&mut self, _: bool) -> Result<(), CompileError<'a>> {
         self.expression()?;
         self.consume(TokenKind::RightParen, "Expected ')'")
     }
 
-    fn unary(&mut self) -> Result<(), CompileError<'a>> {
+    fn unary(&mut self, _: bool) -> Result<(), CompileError<'a>> {
         let operator_kind = self.prev_token.kind;
 
         // compile the operand
@@ -492,7 +553,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         Ok(())
     }
 
-    fn binary(&mut self) -> Result<(), CompileError<'a>> {
+    fn binary(&mut self, _: bool) -> Result<(), CompileError<'a>> {
         let operator_token = self.prev_token.clone();
         let operator_kind = self.prev_token.kind;
 
@@ -522,7 +583,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         Ok(())
     }
 
-    fn ternary(&mut self) -> Result<(), CompileError<'a>> {
+    fn ternary(&mut self, _: bool) -> Result<(), CompileError<'a>> {
         let operator_kind = self.prev_token.kind;
 
         if let TokenKind::Question = operator_kind {
@@ -549,9 +610,10 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         self.advance()?;
 
         let prefix_rule = self.get_rule(self.prev_token.kind).prefix_rule;
+        let can_assign = precedence <= Precedence::Assignment;
 
         match prefix_rule {
-            Some(prefix_rule) => prefix_rule(self)?,
+            Some(prefix_rule) => prefix_rule(self, can_assign)?,
             None => {
                 return Err(CompileError::new(
                     self.prev_token.clone(),
@@ -566,7 +628,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             let infix_rule = self.get_rule(self.prev_token.kind).infix_rule;
 
             match infix_rule {
-                Some(infix_rule) => infix_rule(self)?,
+                Some(infix_rule) => infix_rule(self, can_assign)?,
                 None => {
                     return Err(CompileError::new(
                         self.prev_token.clone(),
@@ -576,7 +638,14 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             }
         }
 
-        Ok(())
+        if can_assign && self.check(TokenKind::Equal) {
+            Err(CompileError::new(
+                self.curr_token.clone(),
+                "Invalid assignment target".to_owned(),
+            ))
+        } else {
+            Ok(())
+        }
     }
 
     fn advance(&mut self) -> Result<(), CompileError<'a>> {
@@ -651,17 +720,22 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             .write_opcode(OpCode::Return, self.prev_token.line);
     }
 
-    fn emit_constant(&mut self, value: Value) -> Result<(), CompileError<'a>> {
+    fn emit_opcode_with_constant(
+        &mut self,
+        opcode: OpCode,
+        opcode_long: OpCode,
+        value: Value,
+    ) -> Result<(), CompileError<'a>> {
         const MAX24BIT: usize = (1 << 24) - 1;
 
         let idx = self.chunk.add_constant(value);
 
         if idx <= u8::MAX as usize {
-            self.emit_opcode(OpCode::Constant);
+            self.emit_opcode(opcode);
             self.emit_byte(idx as u8);
             Ok(())
         } else if idx <= MAX24BIT {
-            self.emit_opcode(OpCode::ConstantLong);
+            self.emit_opcode(opcode_long);
             self.chunk.write_as_24bit_int(idx, self.prev_token.line);
             Ok(())
         } else {

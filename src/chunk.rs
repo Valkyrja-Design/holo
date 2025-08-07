@@ -23,6 +23,12 @@ pub enum OpCode {
     LessEqual,
     Print,
     Pop,
+    DefineGlobal,
+    DefineGlobalLong,
+    GetGlobal,
+    GetGlobalLong,
+    SetGlobal,
+    SetGlobalLong,
 }
 
 impl From<u8> for OpCode {
@@ -49,6 +55,12 @@ impl From<u8> for OpCode {
             18 => Self::LessEqual,
             19 => Self::Print,
             20 => Self::Pop,
+            21 => Self::DefineGlobal,
+            22 => Self::DefineGlobalLong,
+            23 => Self::GetGlobal,
+            24 => Self::GetGlobalLong,
+            25 => Self::SetGlobal,
+            26 => Self::SetGlobalLong,
             _ => panic!("invalid opcode!"),
         }
     }
@@ -78,6 +90,12 @@ impl From<OpCode> for u8 {
             OpCode::LessEqual => 18,
             OpCode::Print => 19,
             OpCode::Pop => 20,
+            OpCode::DefineGlobal => 21,
+            OpCode::DefineGlobalLong => 22,
+            OpCode::GetGlobal => 23,
+            OpCode::GetGlobalLong => 24,
+            OpCode::SetGlobal => 25,
+            OpCode::SetGlobalLong => 26,
         }
     }
 }

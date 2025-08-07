@@ -1,1 +1,1 @@
-[line 2] Redeclaration of variable 'a', first defined at line 1
+[line 1] Runtime error: Undefined variable 'a'

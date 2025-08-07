@@ -14,6 +14,8 @@ print -
 ```
 
 - [ ] multi-line strings
+- [ ] build a symbol table for globals
+- [ ] multi-pass compilation
 - [ ] string interpolation
 - [ ] Better error messages
 - [ ] standard library

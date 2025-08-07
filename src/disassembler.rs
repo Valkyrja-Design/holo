@@ -16,8 +16,8 @@ pub fn disassemble_instr(chunk: &Chunk, offset: usize) -> usize {
     let instr = chunk.code[offset];
 
     match OpCode::from(instr) {
-        OpCode::Constant => const_instr(chunk, offset),
-        OpCode::ConstantLong => const_long_instr(chunk, offset),
+        OpCode::Constant => instr_with_const(chunk, "CONSTANT", offset),
+        OpCode::ConstantLong => long_instr_with_const(chunk, "CONSTANT_LONG", offset),
         OpCode::Nil => simple_instr("NIL", offset),
         OpCode::True => simple_instr("TRUE", offset),
         OpCode::False => simple_instr("FALSE", offset),
@@ -37,21 +37,27 @@ pub fn disassemble_instr(chunk: &Chunk, offset: usize) -> usize {
         OpCode::LessEqual => simple_instr("LESS_EQUAL", offset),
         OpCode::Print => simple_instr("PRINT", offset),
         OpCode::Pop => simple_instr("POP", offset),
+        OpCode::DefineGlobal => instr_with_const(chunk, "DEFINE_GLOBAL", offset),
+        OpCode::DefineGlobalLong => long_instr_with_const(chunk, "DEFINE_GLOBAL_LONG", offset),
+        OpCode::GetGlobal => instr_with_const(chunk, "GET_GLOBAL", offset),
+        OpCode::GetGlobalLong => long_instr_with_const(chunk, "GET_GLOBAL_LONG", offset),
+        OpCode::SetGlobal => instr_with_const(chunk, "SET_GLOBAL", offset),
+        OpCode::SetGlobalLong => long_instr_with_const(chunk, "SET_GLOBAL_LONG", offset),
     }
 }
 
-fn const_instr(chunk: &Chunk, offset: usize) -> usize {
+fn instr_with_const(chunk: &Chunk, name: &str, offset: usize) -> usize {
     let idx = chunk.code[offset + 1];
 
-    println!("CONSTANT {:#?}", chunk.constants[idx as usize]);
+    println!("{} {:#?}", name, chunk.constants[idx as usize]);
 
     offset + 2
 }
 
-fn const_long_instr(chunk: &Chunk, offset: usize) -> usize {
+fn long_instr_with_const(chunk: &Chunk, name: &str, offset: usize) -> usize {
     let idx = Chunk::read_as_24bit_int(&chunk.code[offset + 1..offset + 4]);
 
-    println!("CONSTANT_LONG {:#?}", chunk.constants[idx]);
+    println!("{} {:#?}", name, chunk.constants[idx]);
 
     offset + 4
 }

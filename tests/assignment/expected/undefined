@@ -1,1 +1,1 @@
-[line 1] Undefined variable 'unknown'
+[line 1] Runtime error: Undefined variable 'unknown'

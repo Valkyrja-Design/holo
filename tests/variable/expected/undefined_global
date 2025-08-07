@@ -1,1 +1,1 @@
-[line 1] Undefined variable 'notDefined'
+[line 1] Runtime error: Undefined variable 'notDefined'
