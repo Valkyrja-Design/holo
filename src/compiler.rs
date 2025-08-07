@@ -148,8 +148,8 @@ impl<'a> Compiler<'a> {
         }, // Bang
         ParseRule {
             prefix_rule: None,
-            infix_rule: None,
-            precedence: Precedence::None,
+            infix_rule: Some(Self::binary),
+            precedence: Precedence::Equality,
         }, // BangEqual
         ParseRule {
             prefix_rule: None,
@@ -158,28 +158,28 @@ impl<'a> Compiler<'a> {
         }, // Equal
         ParseRule {
             prefix_rule: None,
-            infix_rule: None,
-            precedence: Precedence::None,
+            infix_rule: Some(Self::binary),
+            precedence: Precedence::Equality,
         }, // EqualEqual
         ParseRule {
             prefix_rule: None,
-            infix_rule: None,
-            precedence: Precedence::None,
+            infix_rule: Some(Self::binary),
+            precedence: Precedence::Comparison,
         }, // Greater
         ParseRule {
             prefix_rule: None,
-            infix_rule: None,
-            precedence: Precedence::None,
+            infix_rule: Some(Self::binary),
+            precedence: Precedence::Comparison,
         }, // GreaterEqual
         ParseRule {
             prefix_rule: None,
-            infix_rule: None,
-            precedence: Precedence::None,
+            infix_rule: Some(Self::binary),
+            precedence: Precedence::Comparison,
         }, // Less
         ParseRule {
             prefix_rule: None,
-            infix_rule: None,
-            precedence: Precedence::None,
+            infix_rule: Some(Self::binary),
+            precedence: Precedence::Comparison,
         }, // LessEqual
         ParseRule {
             prefix_rule: None,
@@ -416,6 +416,7 @@ impl<'a> Compiler<'a> {
         // emit the operator instruction
         match operator_kind {
             token::TokenKind::Minus => self.emit_opcode(chunk::OpCode::Negate),
+            token::TokenKind::Bang => self.emit_opcode(chunk::OpCode::Not),
             _ => {
                 return Err(CompileError::new(
                     self.prev_token.clone(),
@@ -440,6 +441,12 @@ impl<'a> Compiler<'a> {
             token::TokenKind::Minus => self.emit_opcode(chunk::OpCode::Sub),
             token::TokenKind::Star => self.emit_opcode(chunk::OpCode::Mult),
             token::TokenKind::Slash => self.emit_opcode(chunk::OpCode::Divide),
+            token::TokenKind::EqualEqual => self.emit_opcode(chunk::OpCode::Equal),
+            token::TokenKind::BangEqual => self.emit_opcode(chunk::OpCode::NotEqual),
+            token::TokenKind::Greater => self.emit_opcode(chunk::OpCode::Greater),
+            token::TokenKind::GreaterEqual => self.emit_opcode(chunk::OpCode::GreaterEqual),
+            token::TokenKind::Less => self.emit_opcode(chunk::OpCode::Less),
+            token::TokenKind::LessEqual => self.emit_opcode(chunk::OpCode::LessEqual),
             _ => {
                 return Err(CompileError::new(
                     operator_token,

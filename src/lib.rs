@@ -32,7 +32,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn arithmetic_code() {
+    fn arithmetic() {
         let path = "./tests/expressions/evaluate.holo";
 
         assert_eq!(interpret(path), vm::InterpretResult::Ok);
@@ -50,5 +50,12 @@ mod tests {
         let path = "./tests/expressions/ternary_error.holo";
 
         assert_eq!(interpret(path), vm::InterpretResult::RuntimeError);
+    }
+
+    #[test]
+    fn logical() {
+        let path = "./tests/expressions/logical.holo";
+
+        assert_eq!(interpret(path), vm::InterpretResult::Ok);
     }
 }

@@ -47,13 +47,26 @@ impl<'a> VM<'a> {
 
                     return InterpretResult::Ok;
                 }
-                chunk::OpCode::Negate => {
-                    if let Some(value::Value::Number(value)) = self.stack.last_mut() {
-                        *value = -*value;
-                    } else {
+                chunk::OpCode::Negate => match self.stack.last_mut() {
+                    Some(value::Value::Number(value)) => *value = -*value,
+                    Some(_) => {
+                        self.runtime_error("Operand to '-' must be a number");
                         return InterpretResult::RuntimeError;
                     }
-                }
+                    _ => {
+                        return InterpretResult::RuntimeError;
+                    }
+                },
+                chunk::OpCode::Not => match self.stack.last_mut() {
+                    Some(value::Value::Bool(value)) => *value = !*value,
+                    Some(_) => {
+                        self.runtime_error("Operand to '-' must be a bool");
+                        return InterpretResult::RuntimeError;
+                    }
+                    _ => {
+                        return InterpretResult::RuntimeError;
+                    }
+                },
                 chunk::OpCode::Add => {
                     if self.stack.len() < 2 {
                         return InterpretResult::RuntimeError;
@@ -132,6 +145,66 @@ impl<'a> VM<'a> {
 
                     self.runtime_error("Operands to '/' must be numbers");
                     return InterpretResult::RuntimeError;
+                }
+                chunk::OpCode::Equal => {
+                    if self.stack.len() < 2 {
+                        return InterpretResult::RuntimeError;
+                    }
+
+                    let right = self.stack.pop().unwrap();
+                    let left = self.stack.last_mut().unwrap();
+
+                    *left = value::Value::Bool(*left == right);
+                }
+                chunk::OpCode::NotEqual => {
+                    if self.stack.len() < 2 {
+                        return InterpretResult::RuntimeError;
+                    }
+
+                    let right = self.stack.pop().unwrap();
+                    let left = self.stack.last_mut().unwrap();
+
+                    *left = value::Value::Bool(*left != right);
+                }
+                chunk::OpCode::Greater => {
+                    if self.stack.len() < 2 {
+                        return InterpretResult::RuntimeError;
+                    }
+
+                    let right = self.stack.pop().unwrap();
+                    let left = self.stack.last_mut().unwrap();
+
+                    *left = value::Value::Bool(*left > right);
+                }
+                chunk::OpCode::GreaterEqual => {
+                    if self.stack.len() < 2 {
+                        return InterpretResult::RuntimeError;
+                    }
+
+                    let right = self.stack.pop().unwrap();
+                    let left = self.stack.last_mut().unwrap();
+
+                    *left = value::Value::Bool(*left >= right);
+                }
+                chunk::OpCode::Less => {
+                    if self.stack.len() < 2 {
+                        return InterpretResult::RuntimeError;
+                    }
+
+                    let right = self.stack.pop().unwrap();
+                    let left = self.stack.last_mut().unwrap();
+
+                    *left = value::Value::Bool(*left < right);
+                }
+                chunk::OpCode::LessEqual => {
+                    if self.stack.len() < 2 {
+                        return InterpretResult::RuntimeError;
+                    }
+
+                    let right = self.stack.pop().unwrap();
+                    let left = self.stack.last_mut().unwrap();
+
+                    *left = value::Value::Bool(*left <= right);
                 }
                 chunk::OpCode::Ternary => {
                     if self.stack.len() < 3 {

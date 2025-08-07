@@ -28,6 +28,13 @@ pub fn disassemble_instr(chunk: &chunk::Chunk, offset: usize) -> usize {
         chunk::OpCode::Mult => simple_instr("MULT", offset),
         chunk::OpCode::Divide => simple_instr("DIVIDE", offset),
         chunk::OpCode::Ternary => simple_instr("TERNARY", offset),
+        chunk::OpCode::Not => simple_instr("NOT", offset),
+        chunk::OpCode::Equal => simple_instr("EQUAL", offset),
+        chunk::OpCode::NotEqual => simple_instr("NOT_EQUAL", offset),
+        chunk::OpCode::Greater => simple_instr("GREATER", offset),
+        chunk::OpCode::GreaterEqual => simple_instr("GREATER_EQUAL", offset),
+        chunk::OpCode::Less => simple_instr("LESS", offset),
+        chunk::OpCode::LessEqual => simple_instr("LESS_EQUAL", offset),
     }
 }
 

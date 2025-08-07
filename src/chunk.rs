@@ -14,6 +14,13 @@ pub enum OpCode {
     Mult,
     Divide,
     Ternary,
+    Not,
+    Equal,
+    NotEqual,
+    Greater,
+    GreaterEqual,
+    Less,
+    LessEqual,
 }
 
 impl From<u8> for OpCode {
@@ -31,6 +38,13 @@ impl From<u8> for OpCode {
             9 => OpCode::Mult,
             10 => OpCode::Divide,
             11 => OpCode::Ternary,
+            12 => OpCode::Not,
+            13 => OpCode::Equal,
+            14 => OpCode::NotEqual,
+            15 => OpCode::Greater,
+            16 => OpCode::GreaterEqual,
+            17 => OpCode::Less,
+            18 => OpCode::LessEqual,
             _ => panic!("invalid opcode!"),
         }
     }
@@ -51,6 +65,13 @@ impl From<OpCode> for u8 {
             OpCode::Mult => 9,
             OpCode::Divide => 10,
             OpCode::Ternary => 11,
+            OpCode::Not => 12,
+            OpCode::Equal => 13,
+            OpCode::NotEqual => 14,
+            OpCode::Greater => 15,
+            OpCode::GreaterEqual => 16,
+            OpCode::Less => 17,
+            OpCode::LessEqual => 18,
         }
     }
 }
