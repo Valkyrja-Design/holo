@@ -4,9 +4,8 @@ use super::{
     chunk::{Chunk, OpCode},
     gc,
     table::StringInternTable,
-    value::{Closure, Function, Upvalue, Value},
+    value::{Closure, Upvalue, Value},
 };
-use log::debug;
 use std::io::Write;
 
 #[derive(Clone, Copy)]
@@ -109,7 +108,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     // push the return value and set the current frame to the top of the call stack
                     self.stack.truncate(self.current_frame.stack_start);
                     self.push(ret)?;
-                    self.current_frame = self.call_stack.last().unwrap().clone();
+                    self.current_frame = *self.call_stack.last().unwrap();
                 }
                 OpCode::Negate => match self.stack.last_mut() {
                     Some(Value::Number(value)) => *value = -*value,
@@ -332,10 +331,11 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 OpCode::Closure => {
                     let constant = self.read_constant();
                     let func = constant
-                        .as_function_mut()
+                        .as_function_ptr()
                         .expect("Closure constant must be a function");
-                    let upvalue_count = func.upvalue_count;
-                    let closure = Closure::new(func as *mut Function, upvalue_count);
+                    // SAFETY: GC guarantees the pointer is valid.
+                    let upvalue_count = unsafe { (*func).upvalue_count };
+                    let closure = Closure::new(func, upvalue_count);
                     let closure_ptr = self.gc.alloc_closure_ptr(closure);
                     let closure = unsafe {
                         // SAFETY: GC guarantees that all pointers are valid
@@ -421,8 +421,8 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     let instance = instance.unwrap();
                     let field = instance.fields.get(name);
 
-                    if field.is_some() {
-                        *self.stack.last_mut().unwrap() = *field.unwrap();
+                    if let Some(field) = field {
+                        *self.stack.last_mut().unwrap() = *field;
                     } else {
                         // Bind the method to the instance
                         self.bind_method(instance.class, name)?;
@@ -434,14 +434,16 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
 
                     // Set the field on the instance
                     let value = self.stack.pop().unwrap();
-                    let instance = self.stack.last().unwrap().as_class_instance_mut();
+                    let instance = self.stack.last().unwrap().as_class_instance_ptr();
 
                     if instance.is_none() {
                         self.runtime_error("Property must be accessed on a class instance");
                         return None;
                     }
 
-                    let instance = instance.unwrap();
+                    // SAFETY: GC guarantees the pointer is valid, and the instance on the
+                    // stack is not aliased elsewhere while we mutate it here.
+                    let instance = unsafe { &mut *instance.unwrap() };
 
                     instance.fields.insert(name.to_string(), value);
                     *self.stack.last_mut().unwrap() = value;
@@ -454,7 +456,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 }
                 OpCode::Inherit => {
                     let subclass = self.stack.pop().unwrap();
-                    let subclass = subclass.as_class_mut();
+                    let subclass = subclass.as_class_ptr();
                     let superclass = self.stack.last().unwrap().as_class();
                     // Leave the subclass on the stack
 
@@ -464,7 +466,9 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     }
 
                     let superclass = superclass.unwrap();
-                    let subclass = subclass.unwrap();
+                    // SAFETY: GC guarantees the pointer is valid, and the subclass was just
+                    // popped from the stack so it is not aliased while we mutate it here.
+                    let subclass = unsafe { &mut *subclass.unwrap() };
 
                     // Copy all methods from the superclass to the subclass
                     for (name, method) in superclass.methods.iter() {
@@ -587,12 +591,12 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         });
 
         // Set the current frame to the top of the call stack
-        self.current_frame = self.call_stack.last().unwrap().clone();
+        self.current_frame = *self.call_stack.last().unwrap();
         Some(())
     }
 
     fn define_global(&mut self, index: usize) -> Option<()> {
-        if self.stack.len() < 1 {
+        if self.stack.is_empty() {
             return None;
         }
 
@@ -624,7 +628,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
     }
 
     fn set_global(&mut self, index: usize) -> Option<()> {
-        if self.stack.len() < 1 {
+        if self.stack.is_empty() {
             return None;
         }
 
@@ -652,7 +656,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
     }
 
     fn set_local(&mut self, index: usize) -> Option<()> {
-        if self.stack.len() < 1 {
+        if self.stack.is_empty() {
             return None;
         }
 
@@ -680,8 +684,12 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
             .stack
             .last()
             .unwrap()
-            .as_class_mut()
+            .as_class_ptr()
             .expect("Expected a class object to define a method on");
+
+        // SAFETY: GC guarantees the pointer is valid, and the class on the stack is not
+        // aliased elsewhere while we mutate it here.
+        let class = unsafe { &mut *class };
 
         // Add the method to the class
         class
@@ -829,7 +837,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
             (Value::String(left), Value::String(right)) => unsafe {
                 // SAFETY: GC guarantees that all pointers are valid
                 let mut concatenated_str: String =
-                    String::with_capacity((**left).len() + (*right).len());
+                    String::with_capacity((&**left).len() + (&*right).len());
                 concatenated_str.push_str(&**left);
                 concatenated_str.push_str(&*right);
 
@@ -933,9 +941,6 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
 
     /// Do a garbage collection cycle
     fn collect_garbage(&mut self) {
-        // Log the start of the garbage collection cycle for debugging
-        debug!("-- Start of garbage collection cycle --");
-
         // Clear previous previous garbage collection cycle's marks
         self.gc.clear_marks();
 
@@ -955,10 +960,8 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         }
 
         // Mark all values that are reachable from the globals
-        for global in &self.globals {
-            if let Some(value) = global {
-                self.gc.mark_value(*value);
-            }
+        for value in self.globals.iter().flatten() {
+            self.gc.mark_value(*value);
         }
 
         // Mark all values that are reachable from the roots
@@ -969,16 +972,13 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
 
         // Sweep all values that are not reachable
         self.gc.sweep();
-
-        // Log the end of the garbage collection cycle for debugging
-        debug!("-- End of garbage collection cycle --");
     }
 
     // TRY: Stash the current frame's chunk in a local variable
     fn chunk(&self) -> &Chunk {
         unsafe {
             // SAFETY: GC guarantees that all pointers are valid
-            &(*self.current_frame.closure).chunk()
+            (*self.current_frame.closure).chunk()
         }
     }
 

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 /// Represents a compiled function.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Function {
     pub name: String,
     pub arity: u8,
@@ -128,8 +128,9 @@ impl BoundMethod {
 }
 
 /// Represents any value in the language.
-#[derive(Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Default, Clone, Copy, PartialEq, PartialOrd)]
 pub enum Value {
+    #[default]
     Nil,
     Bool(bool),
     Number(f64),
@@ -159,9 +160,9 @@ impl Value {
         }
     }
 
-    pub fn as_function_mut(&self) -> Option<&mut Function> {
+    pub fn as_function_ptr(&self) -> Option<*mut Function> {
         match self {
-            Self::Function(ptr) => unsafe { Some(&mut **ptr) },
+            Self::Function(ptr) => Some(*ptr),
             _ => None,
         }
     }
@@ -201,13 +202,6 @@ impl Value {
         }
     }
 
-    pub fn as_class_mut(&self) -> Option<&mut Class> {
-        match self {
-            Self::Class(ptr) => unsafe { Some(&mut **ptr) },
-            _ => None,
-        }
-    }
-
     pub fn as_class_ptr(&self) -> Option<*mut Class> {
         match self {
             Self::Class(ptr) => Some(*ptr),
@@ -218,13 +212,6 @@ impl Value {
     pub fn as_class_instance(&self) -> Option<&ClassInstance> {
         match self {
             Self::ClassInstance(ptr) => unsafe { Some(&**ptr) },
-            _ => None,
-        }
-    }
-
-    pub fn as_class_instance_mut(&self) -> Option<&mut ClassInstance> {
-        match self {
-            Self::ClassInstance(ptr) => unsafe { Some(&mut **ptr) },
             _ => None,
         }
     }
@@ -315,11 +302,5 @@ impl std::fmt::Display for Value {
                 }
             }
         }
-    }
-}
-
-impl Default for Value {
-    fn default() -> Self {
-        Self::Nil
     }
 }

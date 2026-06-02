@@ -88,9 +88,11 @@ impl<'a> Local<'a> {
     }
 }
 
+type ParseFn<'a, 'b, W> = fn(&mut Compiler<'a, 'b, W>, bool) -> Result<'a, ()>;
+
 struct ParseRule<'a, 'b, W: Write> {
-    prefix_rule: Option<fn(&mut Compiler<'a, 'b, W>, bool) -> Result<'a, ()>>,
-    infix_rule: Option<fn(&mut Compiler<'a, 'b, W>, bool) -> Result<'a, ()>>,
+    prefix_rule: Option<ParseFn<'a, 'b, W>>,
+    infix_rule: Option<ParseFn<'a, 'b, W>>,
     precedence: Precedence,
 }
 
@@ -598,7 +600,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.emit_return()?;
 
         // Restore the previous context
-        let upvalues = std::mem::replace(&mut self.upvalues, Vec::new());
+        let upvalues = std::mem::take(&mut self.upvalues);
         let mut function = self.pop_context();
 
         // Fill in the upvalue count
@@ -1350,7 +1352,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             self.resolve_variable("super")?;
             self.emit_opcode_with_constant(OpCode::SuperInvoke, Value::String(name_ptr))?;
             self.emit_byte(arg_count);
-            return Ok(());
+            Ok(())
         } else {
             self.resolve_variable("super")?;
             self.emit_opcode_with_constant(OpCode::GetSuper, Value::String(name_ptr))
@@ -1666,10 +1668,10 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
     /// Emits instructions to pop (or close-over) all locals upto (but excluding) the given depth
     fn emit_pop_scopes(&mut self, upto_depth: usize) {
-        let mut chunk = std::mem::replace(&mut self.function.chunk, Chunk::new());
-        let mut rev_iter = self.locals.iter().rev();
+        let mut chunk = std::mem::take(&mut self.function.chunk);
+        let rev_iter = self.locals.iter().rev();
 
-        while let Some(local) = rev_iter.next() {
+        for local in rev_iter {
             if local.depth <= upto_depth {
                 break;
             }
@@ -1687,7 +1689,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     /// Pushes a new loop context
     fn begin_loop(&mut self, loop_start: usize) {
         self.loop_contexts.push(LoopContext {
-            loop_start: loop_start,
+            loop_start,
             scope_depth: self.curr_depth,
             break_jumps: Vec::new(),
         });
@@ -1723,10 +1725,10 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                     chunk: Chunk::new(),
                 },
             ),
-            locals: std::mem::replace(&mut self.locals, Vec::new()),
-            curr_depth: std::mem::replace(&mut self.curr_depth, 0),
-            loop_contexts: std::mem::replace(&mut self.loop_contexts, Vec::new()),
-            upvalues: std::mem::replace(&mut self.upvalues, Vec::new()),
+            locals: std::mem::take(&mut self.locals),
+            curr_depth: std::mem::take(&mut self.curr_depth),
+            loop_contexts: std::mem::take(&mut self.loop_contexts),
+            upvalues: std::mem::take(&mut self.upvalues),
             is_initializer: std::mem::replace(&mut self.is_initializer, is_initializer),
         };
 
@@ -1735,15 +1737,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
     /// Restores the previous compilation context and returns the compiled function
     fn pop_context(&mut self) -> Function {
-        let compiled_function = std::mem::replace(
-            &mut self.function,
-            Function {
-                name: String::new(),
-                arity: 0,
-                upvalue_count: 0,
-                chunk: Chunk::new(),
-            },
-        );
+        let compiled_function = std::mem::take(&mut self.function);
 
         // There will always be a saved context
         let saved_context = self.contexts.pop().unwrap();

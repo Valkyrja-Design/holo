@@ -12,7 +12,7 @@ use std::{
 /// - The GC is responsible for ensuring the pointer remains valid
 /// - The string data must be immutable once interned
 /// - The user must remove this key when the corresponding memory is freed
-/// (by calling `StringInternTable::clear_unmarked`)
+///   (by calling `StringInternTable::clear_unmarked`)
 #[derive(Clone, Copy)]
 struct StrKey(NonNull<str>);
 

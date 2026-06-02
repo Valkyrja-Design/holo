@@ -67,6 +67,12 @@ macro_rules! impl_alloc_methods {
     };
 }
 
+impl Default for GC {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GC {
     pub fn new() -> Self {
         GC {
@@ -269,7 +275,7 @@ impl GC {
             while let Some(ptr) = self.worklist_classes.pop() {
                 // Mark the methods
                 unsafe {
-                    for (_k, v) in &(*ptr).methods {
+                    for v in (*ptr).methods.values() {
                         if !self.marked_closures.contains(v) {
                             self.mark_closure(*v);
                         }
@@ -284,7 +290,7 @@ impl GC {
                         self.mark_class((*ptr).class);
                     }
 
-                    for (_k, v) in &(*ptr).fields {
+                    for v in (*ptr).fields.values() {
                         self.mark_value(*v);
                     }
                 }

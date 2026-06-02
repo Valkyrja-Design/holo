@@ -145,7 +145,7 @@ fn closure_instr_long(chunk: &Chunk, mut offset: usize) -> usize {
     offset += 4;
 
     // Get the number of upvalues from the closure
-    let function = chunk.constants[idx as usize].as_function().unwrap();
+    let function = chunk.constants[idx].as_function().unwrap();
 
     for _ in 0..function.upvalue_count {
         let is_local = chunk.code[offset] == 1;
