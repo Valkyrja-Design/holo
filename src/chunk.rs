@@ -1,19 +1,31 @@
-use super::value;
+use crate::value::Value;
 
+/// Represents an opcode in `Holo`'s instruction set
+#[repr(u8)]
 #[derive(Clone, Copy)]
 pub enum OpCode {
+    /// CONSTANT <index: u8>
+    /// Produces a value stored at `index` in the chunk's constant table
     Constant,
+    /// CONSTANT <index: u24>
+    /// Produces a value stored at `index` in the chunk's constant table
     ConstantLong,
+    /// Produces a `nil` value
     Nil,
+    /// Produces a `true` value
     True,
+    /// Produces a `false` value
     False,
+    /// Returns from the current function. The return value is the top value on the stack
     Return,
     Negate,
     Add,
     Sub,
     Mult,
     Divide,
+    /// Evaluates a ternary expression (`condition ? true_value : false_value`)
     Ternary,
+    /// Logical negation
     Not,
     Equal,
     NotEqual,
@@ -21,39 +33,111 @@ pub enum OpCode {
     GreaterEqual,
     Less,
     LessEqual,
+    /// Print the top value on the stack to standard output
     Print,
+    /// Pop the top value off the stack
     Pop,
+    /// DEFINE_GLOBAL <index: u8>
+    /// Define a global variable
     DefineGlobal,
+    /// DEFINE_GLOBAL <index: u24>
+    /// Define a global variable
     DefineGlobalLong,
+    /// GET_GLOBAL <index: u8>
     GetGlobal,
+    /// GET_GLOBAL <index: u24>
     GetGlobalLong,
+    /// SET_GLOBAL <index: u8>
     SetGlobal,
+    /// SET_GLOBAL <index: u24>
     SetGlobalLong,
+    /// GET_LOCAL <index: u8>
     GetLocal,
+    /// GET_LOCAL <index: u24>
     GetLocalLong,
+    /// SET_LOCAL <index: u8>
     SetLocal,
+    /// SET_LOCAL <index: u24>
     SetLocalLong,
+    /// POP_N <count: u8>
     PopN,
+    /// POP_N <count: u24>
     PopNLong,
+    /// JUMP_IF_FALSE <offset: u16>
+    /// Jumps forward by the given offset if the top value on the stack is false
     JumpIfFalse,
+    /// JUMP_IF_TRUE <offset: u16>
+    /// Jumps forward by the given offset if the top value on the stack is true
     JumpIfTrue,
+    /// JUMP <offset: u16>
+    /// Jumps forward by the given offset
     Jump,
+    /// LOOP <offset: u16>
+    /// Jumps backward by the given offset
     Loop,
+    /// CALL <arg_count: u8>
+    /// Calls a function with the given number of arguments
     Call,
+    /// CLOSURE <index: u8> [(<is_local: u8>, <index: u8>); upvalue_count]
+    /// Produces a new closure object. The closure will capture variable from the surrounding scope
+    /// as specified in the variadic arguments. `is_local` indicates the variable being captured is
+    /// a local variable in the same scope as the closure and `index` is the variable's index in the
+    /// stack, otherwise it is an upvalue captured from an outer scope and `index` is the variable's
+    /// index in the upvalue vector of the enclosing function
     Closure,
+    /// CLOSURE <index: u24>
+    /// Produces a new closure object
     ClosureLong,
+    /// GET_UPVALUE <index: u8>
+    /// Pushes the upvalue at the given index onto the stack
     GetUpvalue,
+    /// GET_UPVALUE <index: u24>
+    /// Pushes the upvalue at the given index onto the stack
     GetUpvalueLong,
+    /// SET_UPVALUE <index: u8>
+    /// Sets the upvalue at the given index to the top value on the stack
     SetUpvalue,
+    /// SET_UPVALUE <index: u24>
+    /// Sets the upvalue at the given index to the top value on the stack
     SetUpvalueLong,
+    /// CLOSE_UPVALUE
+    /// Closes the upvalue pointing to the local at the top of the stack
     CloseUpvalue,
+    /// CLASS <index: u8>
+    /// Produces a new class object. The class's name is stored at `index` in the chunk's constant
+    /// table
     Class,
+    /// GET_PROPERTY <index: u8>
+    /// Gets a property from the object at the top of the stack. The property's name is stored at
+    /// `index` in the chunk's constant table
     GetProperty,
+    /// SET_PROPERTY <index: u8>
+    /// Sets a property on the object at the top of the stack. The property's name is stored at
+    /// `index` in the chunk's constant table
     SetProperty,
+    /// METHOD <index: u8>
+    /// Defines a method of a class. The method's name is stored at `index` in the chunk's constant
+    /// table with the method closure at the top of the stack and the class object right below it
     Method,
+    /// INVOKE <index: u8> <arg_count: u8>
+    /// Invokes a method on the object at the top of the stack. The method's name is stored at
+    /// `index` in the chunk's constant table. The class instance on which the method is invoked
+    /// lies below the first argument
     Invoke,
+    /// INHERIT
+    /// Inherit methods from the superclass. The subclass lies at the top of the stack with the
+    /// superclass right below it
     Inherit,
+    /// GET_SUPER <index: u8>
+    /// Gets a method from the superclass. The method's name is stored at `index` in the chunk's
+    /// constant table. The superclass lies at the top of the stack with the subclass instance
+    /// right below it
     GetSuper,
+    /// SUPER_INVOKE <index: u8> <arg_count: u8>
+    /// Invokes a method on the superclass. The method's name is stored at `index` in the chunk's
+    /// constant table. The superclass lies at the top of the stack with the subclass instance
+    /// right below it. Accesses using `this` in the superclass method will resolve to the
+    /// subclass instance
     SuperInvoke,
 }
 
@@ -120,74 +204,22 @@ impl From<u8> for OpCode {
 
 impl From<OpCode> for u8 {
     fn from(value: OpCode) -> u8 {
-        match value {
-            OpCode::Constant => 0,
-            OpCode::ConstantLong => 1,
-            OpCode::Nil => 2,
-            OpCode::True => 3,
-            OpCode::False => 4,
-            OpCode::Return => 5,
-            OpCode::Negate => 6,
-            OpCode::Add => 7,
-            OpCode::Sub => 8,
-            OpCode::Mult => 9,
-            OpCode::Divide => 10,
-            OpCode::Ternary => 11,
-            OpCode::Not => 12,
-            OpCode::Equal => 13,
-            OpCode::NotEqual => 14,
-            OpCode::Greater => 15,
-            OpCode::GreaterEqual => 16,
-            OpCode::Less => 17,
-            OpCode::LessEqual => 18,
-            OpCode::Print => 19,
-            OpCode::Pop => 20,
-            OpCode::DefineGlobal => 21,
-            OpCode::DefineGlobalLong => 22,
-            OpCode::GetGlobal => 23,
-            OpCode::GetGlobalLong => 24,
-            OpCode::SetGlobal => 25,
-            OpCode::SetGlobalLong => 26,
-            OpCode::GetLocal => 27,
-            OpCode::GetLocalLong => 28,
-            OpCode::SetLocal => 29,
-            OpCode::SetLocalLong => 30,
-            OpCode::PopN => 31,
-            OpCode::PopNLong => 32,
-            OpCode::JumpIfFalse => 33,
-            OpCode::JumpIfTrue => 34,
-            OpCode::Jump => 35,
-            OpCode::Loop => 36,
-            OpCode::Call => 37,
-            OpCode::Closure => 38,
-            OpCode::ClosureLong => 39,
-            OpCode::GetUpvalue => 40,
-            OpCode::GetUpvalueLong => 41,
-            OpCode::SetUpvalue => 42,
-            OpCode::SetUpvalueLong => 43,
-            OpCode::CloseUpvalue => 44,
-            OpCode::Class => 45,
-            OpCode::GetProperty => 46,
-            OpCode::SetProperty => 47,
-            OpCode::Method => 48,
-            OpCode::Invoke => 49,
-            OpCode::Inherit => 50,
-            OpCode::GetSuper => 51,
-            OpCode::SuperInvoke => 52,
-        }
+        value as u8
     }
 }
 
+/// Represents line information for a specific bytecode.
 #[derive(Debug)]
 pub struct LineInfo {
     byte_idx: usize,
     line: usize,
 }
 
+/// Represents a piece of compiled bytecode, associated constants and line information.
 #[derive(Debug)]
 pub struct Chunk {
     pub code: Vec<u8>,
-    pub constants: Vec<value::Value>,
+    pub constants: Vec<Value>,
     pub line_info: Vec<LineInfo>,
 }
 
@@ -254,7 +286,7 @@ impl Chunk {
         self.write_bytes(&bytes, &[line; 2]);
     }
 
-    pub fn add_constant(&mut self, value: value::Value) -> usize {
+    pub fn add_constant(&mut self, value: Value) -> usize {
         self.constants.push(value);
         self.constants.len() - 1
     }
@@ -284,5 +316,49 @@ impl Chunk {
 impl Default for Chunk {
     fn default() -> Self {
         Chunk::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_int24_roundtrip() {
+        let value = 0x123456;
+        let mut bytes = vec![0u8; 3];
+
+        bytes[0] = ((value >> 16) & 0xFF) as u8;
+        bytes[1] = ((value >> 8) & 0xFF) as u8;
+        bytes[2] = (value & 0xFF) as u8;
+
+        let result = Chunk::read_int24(&bytes);
+        assert_eq!(result, value);
+    }
+
+    #[test]
+    fn test_int16_roundtrip() {
+        let value = 0x1234;
+        let mut bytes = vec![0u8; 2];
+
+        bytes[0] = ((value >> 8) & 0xFF) as u8;
+        bytes[1] = (value & 0xFF) as u8;
+
+        let result = Chunk::read_int16(&bytes);
+        assert_eq!(result, value);
+    }
+
+    #[test]
+    fn test_line_info() {
+        let mut chunk = Chunk::new();
+        chunk.write_byte(0, 1);
+        chunk.write_byte(1, 1);
+        chunk.write_byte(2, 2);
+        chunk.write_byte(3, 3);
+
+        assert_eq!(chunk.get_line_of(0), 1);
+        assert_eq!(chunk.get_line_of(1), 1);
+        assert_eq!(chunk.get_line_of(2), 2);
+        assert_eq!(chunk.get_line_of(3), 3);
     }
 }
