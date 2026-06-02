@@ -1,5 +1,11 @@
 use std::collections::HashMap;
 
+/// A symbol table for managing variable names and their indices.
+///
+/// This table maintains a bidirectional mapping between variable names
+/// and their indices, which are used for efficient variable access in
+/// the compiled bytecode.
+#[derive(Debug)]
 pub struct SymbolTable<'a> {
     symbols: HashMap<&'a str, usize>,
     /// Owned names in insertion order, index → name
@@ -14,7 +20,7 @@ impl<'a> SymbolTable<'a> {
         }
     }
 
-    /// Add a global (or return existing index) and store its owned name
+    /// Declares a new symbol or returns the existing index if already declared.
     pub fn declare(&mut self, name: &'a str) -> usize {
         if let Some(&idx) = self.symbols.get(name) {
             idx
@@ -26,18 +32,30 @@ impl<'a> SymbolTable<'a> {
         }
     }
 
-    /// Resolve a variable name to its index (declares if missing)
+    /// Resolve a variable name to its index. This will declare the variable if
+    /// it does not exist
     pub fn resolve(&mut self, name: &'a str) -> usize {
         self.declare(name)
     }
 
-    /// Number of globals
+    /// Returns the number of symbols in the table.
     pub fn len(&self) -> usize {
         self.names.len()
     }
 
-    /// Returns the internal list of variable names
-    pub fn names_as_owned(self) -> Vec<String> {
+    /// Returns true if the symbol table is empty.
+    pub fn is_empty(&self) -> bool {
+        self.names.is_empty()
+    }
+
+    /// Consumes the symbol table and returns the owned names.
+    pub fn into_names(self) -> Vec<String> {
         self.names
+    }
+}
+
+impl Default for SymbolTable<'_> {
+    fn default() -> Self {
+        Self::new()
     }
 }

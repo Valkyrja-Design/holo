@@ -29,7 +29,7 @@ pub fn interpret<T: Write, U: Write>(path: PathBuf, output_stream: &mut T, err_s
                     err_stream,
                 );
                 let compiled_function = compiler.compile();
-                let global_var_names = sym_table.names_as_owned();
+                let global_var_names = sym_table.into_names();
 
                 // We need to push `None` for each global variable that is not a native function
                 for _ in &global_var_names[native_funcs.len()..] {
