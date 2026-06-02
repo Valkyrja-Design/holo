@@ -1,21 +1,21 @@
 //! Garbage collector implementation for the virtual machine.
 //!
 //! This module implements a simple mark-and-sweep garbage collector that manages
-//! memory for all heap-allocated objects in the runtime. The collector uses
-//! a mark-and-sweep algorithm with automatic threshold adjustment.
+//! memory for all heap-allocated objects in the runtime. Collection is triggered
+//! based on the number of live objects, with the threshold growing after each
+//! cycle.
 
 use crate::native::NativeFunc;
-use crate::sizeof::Sizeof;
 use crate::value::BoundMethod;
 use crate::value::{Class, ClassInstance, Closure, Function, Upvalue, Value};
 use std::collections::HashSet;
 
-static GC_DEFAULT_THRESHOLD: usize = 1024 * 1024; // 1 MB
+static GC_DEFAULT_THRESHOLD: usize = 1024; // live objects
 static GC_THRESHOLD_GROWTH_FACTOR: f64 = 2.0;
 
 #[derive(Debug)]
 pub struct GC {
-    bytes_allocated: usize,
+    live_objects: usize,
     next_gc: usize,
 
     strings: Vec<*mut String>,
@@ -57,7 +57,7 @@ macro_rules! impl_alloc_methods {
 
             /// Allocates an object and returns a raw pointer to it.
             pub fn $ptr_method(&mut self, obj: $type) -> *mut $type {
-                self.bytes_allocated += obj.sizeof();
+                self.live_objects += 1;
 
                 let ptr = Box::into_raw(Box::new(obj));
                 self.$field.push(ptr);
@@ -76,7 +76,7 @@ impl Default for GC {
 impl GC {
     pub fn new() -> Self {
         GC {
-            bytes_allocated: 0,
+            live_objects: 0,
             next_gc: GC_DEFAULT_THRESHOLD,
             strings: Vec::new(),
             functions: Vec::new(),
@@ -333,7 +333,7 @@ impl GC {
                             true
                         } else {
                             unsafe {
-                                self.bytes_allocated -= (&*ptr).sizeof();
+                                self.live_objects -= 1;
                                 let _ = Box::from_raw(ptr);
                             }
                             false
@@ -355,7 +355,8 @@ impl GC {
         );
 
         // Set the next GC threshold
-        self.next_gc = (self.bytes_allocated as f64 * GC_THRESHOLD_GROWTH_FACTOR) as usize;
+        self.next_gc = (self.live_objects as f64 * GC_THRESHOLD_GROWTH_FACTOR) as usize;
+        self.next_gc = self.next_gc.max(GC_DEFAULT_THRESHOLD);
     }
 
     /// Returns true if the given string is marked
@@ -365,7 +366,7 @@ impl GC {
 
     /// Returns true if a garbage collection should be triggered
     pub fn should_collect(&self) -> bool {
-        self.bytes_allocated > self.next_gc
+        self.live_objects > self.next_gc
     }
 }
 

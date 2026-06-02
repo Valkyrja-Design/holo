@@ -4,7 +4,6 @@ pub mod disassembler;
 pub mod gc;
 pub mod native;
 pub mod scanner;
-pub mod sizeof;
 pub mod sym_table;
 pub mod table;
 pub mod token;
