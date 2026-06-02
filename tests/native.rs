@@ -6,8 +6,6 @@ use std::path::PathBuf;
 
 #[test]
 fn clock() {
-    let _ = env_logger::builder().is_test(true).try_init();
-
     // Base directory containing the test inputs and expected outputs
     let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
@@ -33,8 +31,6 @@ fn clock() {
 
 #[test]
 fn clock_error() {
-    let _ = env_logger::builder().is_test(true).try_init();
-
     // Base directory containing the test inputs and expected outputs
     let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")

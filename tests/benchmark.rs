@@ -10,8 +10,6 @@ use std::path::PathBuf;
 #[test]
 #[ignore]
 fn benchmarks_run_without_errors() {
-    let _ = env_logger::builder().is_test(true).try_init();
-
     let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("test_files")
