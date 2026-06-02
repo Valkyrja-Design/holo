@@ -1,6 +1,6 @@
-use super::chunk::{Chunk, OpCode};
+use crate::chunk::{Chunk, OpCode};
 
-pub fn disassemble(chunk: &Chunk, chunk_name: &str) {
+pub fn disassemble_chunk(chunk: &Chunk, chunk_name: &str) {
     println!("== {} ==", chunk_name);
 
     let mut offset: usize = 0;
@@ -275,6 +275,6 @@ mod tests {
         chunk.write_opcode(OpCode::JumpIfTrue, 8);
         chunk.write_int16(375, 9);
 
-        disassemble(&chunk, "simple test chunk");
+        disassemble_chunk(&chunk, "simple test chunk");
     }
 }
