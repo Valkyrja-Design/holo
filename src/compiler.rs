@@ -614,8 +614,17 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
         // Emit the upvalues
         for upvalue in upvalues {
+            // The `Closure` instruction encodes each captured variable's slot
+            // index in a single byte, so reject closures that would capture a
+            // local slot or enclosing upvalue beyond that range.
+            if upvalue.index > u8::MAX as usize {
+                return Err(CompileError::new(
+                    self.prev_token.clone(),
+                    "Too many local variables or upvalues to capture in a closure".to_string(),
+                ));
+            }
+
             self.emit_byte(if upvalue.is_local { 1 } else { 0 });
-            // FIXME: `upvalue.index` can be bigger than `u8::MAX`
             self.emit_byte(upvalue.index as u8);
         }
 

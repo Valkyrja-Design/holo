@@ -329,67 +329,34 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     self.call_value(arg_count)?
                 }
                 OpCode::Closure => {
-                    let constant = self.read_constant();
-                    let func = constant
-                        .as_function_ptr()
-                        .expect("Closure constant must be a function");
-                    // SAFETY: GC guarantees the pointer is valid.
-                    let upvalue_count = unsafe { (*func).upvalue_count };
-                    let closure = Closure::new(func, upvalue_count);
-                    let closure_ptr = self.gc.alloc_closure_ptr(closure);
-                    let closure = unsafe {
-                        // SAFETY: GC guarantees that all pointers are valid
-                        &mut *closure_ptr
-                    };
+                    let func = self.read_constant();
 
-                    // Push the closure first so that it can be captured by upvalues
-                    self.push(Value::Closure(closure_ptr))?;
-
-                    // Attempt to trigger a garbage collection cycle
-                    self.attempt_gc();
-
-                    // Initialize the upvalues
-                    for _ in 0..upvalue_count {
-                        let is_local = self.read_byte() == 1;
-                        let index = self.read_byte() as usize;
-
-                        let upvalue = if is_local {
-                            self.capture_local(index)
-                        } else {
-                            self.upvalues()[index]
-                        };
-
-                        closure.upvalues.push(upvalue);
-                    }
+                    self.build_closure(func)?
                 }
                 OpCode::ClosureLong => {
-                    // TODO
+                    let func = self.read_constant_long();
+
+                    self.build_closure(func)?
                 }
                 OpCode::GetUpvalue => {
-                    let index = self.read_byte() as usize;
-                    let upvalue = self.upvalues()[index];
+                    let index = self.read_int8();
 
-                    unsafe {
-                        // SAFETY: Upvalue pointers are allocated by GC and remain valid
-                        // for the lifetime of the GC which outlives all Value references
-                        self.push(*(*upvalue).location)?;
-                    }
+                    self.get_upvalue(index)?
                 }
                 OpCode::GetUpvalueLong => {
-                    // TODO
+                    let index = self.read_int24();
+
+                    self.get_upvalue(index)?
                 }
                 OpCode::SetUpvalue => {
-                    let index = self.read_byte() as usize;
-                    let upvalue = self.upvalues()[index];
+                    let index = self.read_int8();
 
-                    unsafe {
-                        // SAFETY: Upvalue pointers are allocated by GC and remain valid
-                        // for the lifetime of the GC which outlives all Value references
-                        *(*upvalue).location = *self.stack.last().unwrap()
-                    }
+                    self.set_upvalue(index)
                 }
                 OpCode::SetUpvalueLong => {
-                    // TODO
+                    let index = self.read_int24();
+
+                    self.set_upvalue(index)
                 }
                 OpCode::CloseUpvalue => {
                     // Close over the local at the top of the stack
@@ -664,6 +631,65 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         let abs_index = self.current_frame.stack_start + index;
         self.stack[abs_index] = *self.stack.last().unwrap();
         Some(())
+    }
+
+    /// Builds a closure from the given function value, capturing its upvalues.
+    /// Assumes the upvalue operands (`is_local`, `index`) immediately follow
+    /// the current instruction pointer.
+    fn build_closure(&mut self, func: Value) -> Option<()> {
+        let func = func
+            .as_function_ptr()
+            .expect("Closure constant must be a function");
+        // SAFETY: GC guarantees the pointer is valid.
+        let upvalue_count = unsafe { (*func).upvalue_count };
+        let closure = Closure::new(func, upvalue_count);
+        let closure_ptr = self.gc.alloc_closure_ptr(closure);
+        let closure = unsafe {
+            // SAFETY: GC guarantees that all pointers are valid
+            &mut *closure_ptr
+        };
+
+        // Push the closure first so that it can be captured by upvalues
+        self.push(Value::Closure(closure_ptr))?;
+
+        // Attempt to trigger a garbage collection cycle
+        self.attempt_gc();
+
+        // Initialize the upvalues
+        for _ in 0..upvalue_count {
+            let is_local = self.read_byte() == 1;
+            let index = self.read_byte() as usize;
+
+            let upvalue = if is_local {
+                self.capture_local(index)
+            } else {
+                self.upvalues()[index]
+            };
+
+            closure.upvalues.push(upvalue);
+        }
+
+        Some(())
+    }
+
+    fn get_upvalue(&mut self, index: usize) -> Option<()> {
+        let upvalue = self.upvalues()[index];
+
+        unsafe {
+            // SAFETY: the upvalue is reachable from the current closure (a GC root),
+            // so it stays alive and `location` points to live storage.
+            self.push(*(*upvalue).location)
+        }
+    }
+
+    fn set_upvalue(&mut self, index: usize) {
+        let upvalue = self.upvalues()[index];
+
+        unsafe {
+            // SAFETY: the upvalue is reachable from the current closure (a GC root),
+            // so it stays alive and `location` points to live storage.
+            *(*upvalue).location = *self.stack.last().unwrap()
+        }
     }
 
     fn define_method(&mut self) -> Option<()> {
