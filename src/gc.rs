@@ -1,9 +1,13 @@
-use crate::value::BoundMethod;
+//! Garbage collector implementation for the virtual machine.
+//!
+//! This module implements a simple mark-and-sweep garbage collector that manages
+//! memory for all heap-allocated objects in the runtime. The collector uses
+//! a mark-and-sweep algorithm with automatic threshold adjustment.
 
-use super::native::NativeFunc;
-use super::sizeof::Sizeof;
-use super::value::{Class, ClassInstance, Closure, Function, Upvalue, Value};
-use log::debug;
+use crate::native::NativeFunc;
+use crate::sizeof::Sizeof;
+use crate::value::BoundMethod;
+use crate::value::{Class, ClassInstance, Closure, Function, Upvalue, Value};
 use std::collections::HashSet;
 
 static GC_DEFAULT_THRESHOLD: usize = 1024 * 1024; // 1 MB
@@ -42,6 +46,27 @@ pub struct GC {
     worklist_bound_methods: Vec<*mut BoundMethod>,
 }
 
+macro_rules! impl_alloc_methods {
+    ($(($method:ident, $ptr_method:ident, $field:ident, $type:ty, $value_variant:ident)),*) => {
+        $(
+            /// Allocates an object and returns a Value wrapping it.
+            pub fn $method(&mut self, obj: $type) -> Value {
+                let ptr = self.$ptr_method(obj);
+                Value::$value_variant(ptr)
+            }
+
+            /// Allocates an object and returns a raw pointer to it.
+            pub fn $ptr_method(&mut self, obj: $type) -> *mut $type {
+                self.bytes_allocated += obj.sizeof();
+
+                let ptr = Box::into_raw(Box::new(obj));
+                self.$field.push(ptr);
+                ptr
+            }
+        )*
+    };
+}
+
 impl GC {
     pub fn new() -> Self {
         GC {
@@ -72,182 +97,40 @@ impl GC {
         }
     }
 
-    pub fn alloc_string(&mut self, s: String) -> Value {
-        self.bytes_allocated += s.sizeof();
-
-        let ptr = Box::into_raw(Box::new(s));
-        debug!("Allocating string {:?} at {:?}", unsafe { &*ptr }, ptr);
-
-        self.strings.push(ptr);
-        Value::String(ptr)
-    }
-
-    pub fn alloc_function(&mut self, f: Function) -> Value {
-        self.bytes_allocated += f.sizeof();
-
-        let ptr = Box::into_raw(Box::new(f));
-        debug!("Allocating function {:?} at {:?}", unsafe { &*ptr }, ptr);
-
-        self.functions.push(ptr);
-        Value::Function(ptr)
-    }
-
-    pub fn alloc_closure(&mut self, c: Closure) -> Value {
-        self.bytes_allocated += c.sizeof();
-
-        let ptr = Box::into_raw(Box::new(c));
-        debug!("Allocating closure {:?} at {:?}", unsafe { &*ptr }, ptr);
-
-        self.closures.push(ptr);
-        Value::Closure(ptr)
-    }
-
-    pub fn alloc_native(&mut self, n: NativeFunc) -> Value {
-        self.bytes_allocated += n.sizeof();
-
-        let ptr = Box::into_raw(Box::new(n));
-        debug!("Allocating native {:?} at {:?}", unsafe { &*ptr }, ptr);
-
-        self.natives.push(ptr);
-        Value::NativeFunc(ptr)
-    }
-
-    pub fn alloc_upvalue(&mut self, u: Upvalue) -> Value {
-        self.bytes_allocated += u.sizeof();
-
-        let ptr = Box::into_raw(Box::new(u));
-        debug!("Allocating upvalue {:?} at {:?}", unsafe { &*ptr }, ptr);
-
-        self.upvalues.push(ptr);
-        Value::Upvalue(ptr)
-    }
-
-    pub fn alloc_class(&mut self, c: Class) -> Value {
-        self.bytes_allocated += c.sizeof();
-
-        let ptr = Box::into_raw(Box::new(c));
-        debug!("Allocating class {:?} at {:?}", unsafe { &*ptr }, ptr);
-
-        self.classes.push(ptr);
-        Value::Class(ptr)
-    }
-
-    pub fn alloc_class_instance(&mut self, c: ClassInstance) -> Value {
-        self.bytes_allocated += c.sizeof();
-
-        let ptr = Box::into_raw(Box::new(c));
-        debug!(
-            "Allocating class instance {:?} at {:?}",
-            unsafe { &*ptr },
-            ptr
-        );
-
-        self.class_instances.push(ptr);
-        Value::ClassInstance(ptr)
-    }
-
-    pub fn alloc_bound_method(&mut self, b: BoundMethod) -> Value {
-        self.bytes_allocated += b.sizeof();
-
-        let ptr = Box::into_raw(Box::new(b));
-        debug!(
-            "Allocating bound method {:?} at {:?}",
-            unsafe { &*ptr },
-            ptr
-        );
-
-        self.bound_methods.push(ptr);
-        Value::BoundMethod(ptr)
-    }
-
-    // Raw pointer allocation methods for cases needing direct pointers
-    pub fn alloc_string_ptr(&mut self, s: String) -> *mut String {
-        self.bytes_allocated += s.sizeof();
-
-        let ptr = Box::into_raw(Box::new(s));
-        debug!("Allocating string {:?} at {:?}", unsafe { &*ptr }, ptr);
-
-        self.strings.push(ptr);
-        ptr
-    }
-
-    pub fn alloc_function_ptr(&mut self, f: Function) -> *mut Function {
-        self.bytes_allocated += f.sizeof();
-
-        let ptr = Box::into_raw(Box::new(f));
-        debug!("Allocating function {:?} at {:?}", unsafe { &*ptr }, ptr);
-
-        self.functions.push(ptr);
-        ptr
-    }
-
-    pub fn alloc_closure_ptr(&mut self, c: Closure) -> *mut Closure {
-        self.bytes_allocated += c.sizeof();
-
-        let ptr = Box::into_raw(Box::new(c));
-        debug!("Allocating closure {:?} at {:?}", unsafe { &*ptr }, ptr);
-
-        self.closures.push(ptr);
-        ptr
-    }
-
-    pub fn alloc_native_ptr(&mut self, n: NativeFunc) -> *mut NativeFunc {
-        self.bytes_allocated += n.sizeof();
-
-        let ptr = Box::into_raw(Box::new(n));
-        debug!("Allocating native {:?} at {:?}", unsafe { &*ptr }, ptr);
-
-        self.natives.push(ptr);
-        ptr
-    }
-
-    pub fn alloc_upvalue_ptr(&mut self, u: Upvalue) -> *mut Upvalue {
-        self.bytes_allocated += u.sizeof();
-
-        let ptr = Box::into_raw(Box::new(u));
-        debug!("Allocating upvalue {:?} at {:?}", unsafe { &*ptr }, ptr);
-
-        self.upvalues.push(ptr);
-        ptr
-    }
-
-    pub fn alloc_class_ptr(&mut self, c: Class) -> *mut Class {
-        self.bytes_allocated += c.sizeof();
-
-        let ptr = Box::into_raw(Box::new(c));
-        debug!("Allocating class {:?} at {:?}", unsafe { &*ptr }, ptr);
-
-        self.classes.push(ptr);
-        ptr
-    }
-
-    pub fn alloc_class_instance_ptr(&mut self, c: ClassInstance) -> *mut ClassInstance {
-        self.bytes_allocated += c.sizeof();
-
-        let ptr = Box::into_raw(Box::new(c));
-        debug!(
-            "Allocating class instance {:?} at {:?}",
-            unsafe { &*ptr },
-            ptr
-        );
-
-        self.class_instances.push(ptr);
-        ptr
-    }
-
-    pub fn alloc_bound_method_ptr(&mut self, b: BoundMethod) -> *mut BoundMethod {
-        self.bytes_allocated += b.sizeof();
-
-        let ptr = Box::into_raw(Box::new(b));
-        debug!(
-            "Allocating bound method {:?} at {:?}",
-            unsafe { &*ptr },
-            ptr
-        );
-
-        self.bound_methods.push(ptr);
-        ptr
-    }
+    impl_alloc_methods!(
+        (alloc_string, alloc_string_ptr, strings, String, String),
+        (
+            alloc_function,
+            alloc_function_ptr,
+            functions,
+            Function,
+            Function
+        ),
+        (alloc_closure, alloc_closure_ptr, closures, Closure, Closure),
+        (
+            alloc_native,
+            alloc_native_ptr,
+            natives,
+            NativeFunc,
+            NativeFunc
+        ),
+        (alloc_upvalue, alloc_upvalue_ptr, upvalues, Upvalue, Upvalue),
+        (alloc_class, alloc_class_ptr, classes, Class, Class),
+        (
+            alloc_class_instance,
+            alloc_class_instance_ptr,
+            class_instances,
+            ClassInstance,
+            ClassInstance
+        ),
+        (
+            alloc_bound_method,
+            alloc_bound_method_ptr,
+            bound_methods,
+            BoundMethod,
+            BoundMethod
+        )
+    );
 
     /// Marks a value as reachable
     pub fn mark_value(&mut self, v: Value) {
@@ -296,58 +179,46 @@ impl GC {
 
     /// Marks a string pointer as reachable
     pub fn mark_string(&mut self, ptr: *mut String) {
-        debug!("Marking string {:?} at {:?}", unsafe { &*ptr }, ptr);
         self.marked_strings.insert(ptr);
     }
 
     /// Marks a function pointer as reachable
     fn mark_function(&mut self, ptr: *mut Function) {
-        debug!("Marking function {:?} at {:?}", unsafe { &*ptr }, ptr);
         self.marked_functions.insert(ptr);
         self.worklist_functions.push(ptr);
     }
 
     /// Marks a closure pointer as reachable
     pub fn mark_closure(&mut self, ptr: *mut Closure) {
-        debug!("Marking closure {:?} at {:?}", unsafe { &*ptr }, ptr);
         self.marked_closures.insert(ptr);
         self.worklist_closures.push(ptr);
     }
 
     /// Marks a native function pointer as reachable
     fn mark_native(&mut self, ptr: *mut NativeFunc) {
-        debug!(
-            "Marking native function {:?} at {:?}",
-            unsafe { &*ptr },
-            ptr
-        );
         self.marked_natives.insert(ptr);
     }
 
     /// Marks an upvalue pointer as reachable
     pub fn mark_upvalue(&mut self, ptr: *mut Upvalue) {
-        debug!("Marking upvalue {:?} at {:?}", unsafe { &*ptr }, ptr);
         self.marked_upvalues.insert(ptr);
         self.worklist_upvalues.push(ptr);
     }
 
     /// Marks a class pointer as reachable
     pub fn mark_class(&mut self, ptr: *mut Class) {
-        debug!("Marking class {:?} at {:?}", unsafe { &*ptr }, ptr);
         self.marked_classes.insert(ptr);
         self.worklist_classes.push(ptr);
     }
 
     /// Marks a class instance pointer as reachable
     pub fn mark_class_instance(&mut self, ptr: *mut ClassInstance) {
-        debug!("Marking class instance {:?} at {:?}", unsafe { &*ptr }, ptr);
         self.marked_class_instances.insert(ptr);
         self.worklist_class_instances.push(ptr);
     }
 
     /// Marks a bound method pointer as reachable
     pub fn mark_bound_method(&mut self, ptr: *mut BoundMethod) {
-        debug!("Marking bound method {:?} at {:?}", unsafe { &*ptr }, ptr);
         self.marked_bound_methods.insert(ptr);
         self.worklist_bound_methods.push(ptr);
     }
@@ -448,129 +319,37 @@ impl GC {
 
     /// Frees all unmarked pointers
     pub fn sweep(&mut self) {
-        let prev_bytes_allocated = self.bytes_allocated;
+        macro_rules! sweep_objects {
+            ($(($field:ident, $marked_set:ident)),*) => {
+                $(
+                    self.$field.retain(|&ptr| {
+                        if self.$marked_set.contains(&ptr) {
+                            true
+                        } else {
+                            unsafe {
+                                self.bytes_allocated -= (&*ptr).sizeof();
+                                let _ = Box::from_raw(ptr);
+                            }
+                            false
+                        }
+                    });
+                )*
+            };
+        }
 
-        self.strings.retain(|&ptr| {
-            if self.marked_strings.contains(&ptr) {
-                true
-            } else {
-                debug!("Freeing string at {:?}", ptr);
-
-                self.bytes_allocated -= unsafe { &*ptr }.sizeof();
-                unsafe {
-                    let _ = Box::from_raw(ptr);
-                }
-                false
-            }
-        });
-
-        self.functions.retain(|&ptr| {
-            if self.marked_functions.contains(&ptr) {
-                true
-            } else {
-                debug!("Freeing function at {:?}", ptr);
-
-                self.bytes_allocated -= unsafe { &*ptr }.sizeof();
-                unsafe {
-                    let _ = Box::from_raw(ptr);
-                }
-                false
-            }
-        });
-
-        self.closures.retain(|&ptr| {
-            if self.marked_closures.contains(&ptr) {
-                true
-            } else {
-                debug!("Freeing closure at {:?}", ptr);
-
-                self.bytes_allocated -= unsafe { &*ptr }.sizeof();
-                unsafe {
-                    let _ = Box::from_raw(ptr);
-                }
-                false
-            }
-        });
-
-        self.natives.retain(|&ptr| {
-            if self.marked_natives.contains(&ptr) {
-                true
-            } else {
-                debug!("Freeing native at {:?}", ptr);
-
-                self.bytes_allocated -= unsafe { &*ptr }.sizeof();
-                unsafe {
-                    let _ = Box::from_raw(ptr);
-                }
-                false
-            }
-        });
-
-        self.upvalues.retain(|&ptr| {
-            if self.marked_upvalues.contains(&ptr) {
-                true
-            } else {
-                debug!("Freeing upvalue at {:?}", ptr);
-
-                self.bytes_allocated -= unsafe { &*ptr }.sizeof();
-                unsafe {
-                    let _ = Box::from_raw(ptr);
-                }
-                false
-            }
-        });
-
-        self.classes.retain(|&ptr| {
-            if self.marked_classes.contains(&ptr) {
-                true
-            } else {
-                debug!("Freeing class at {:?}", ptr);
-
-                self.bytes_allocated -= unsafe { &*ptr }.sizeof();
-                unsafe {
-                    let _ = Box::from_raw(ptr);
-                }
-                false
-            }
-        });
-
-        self.class_instances.retain(|&ptr| {
-            if self.marked_class_instances.contains(&ptr) {
-                true
-            } else {
-                debug!("Freeing class instance at {:?}", ptr);
-
-                self.bytes_allocated -= unsafe { &*ptr }.sizeof();
-                unsafe {
-                    let _ = Box::from_raw(ptr);
-                }
-                false
-            }
-        });
-
-        self.bound_methods.retain(|&ptr| {
-            if self.marked_bound_methods.contains(&ptr) {
-                true
-            } else {
-                debug!("Freeing bound method at {:?}", ptr);
-
-                self.bytes_allocated -= unsafe { &*ptr }.sizeof();
-                unsafe {
-                    let _ = Box::from_raw(ptr);
-                }
-                false
-            }
-        });
+        sweep_objects!(
+            (strings, marked_strings),
+            (functions, marked_functions),
+            (closures, marked_closures),
+            (natives, marked_natives),
+            (upvalues, marked_upvalues),
+            (classes, marked_classes),
+            (class_instances, marked_class_instances),
+            (bound_methods, marked_bound_methods)
+        );
 
         // Set the next GC threshold
         self.next_gc = (self.bytes_allocated as f64 * GC_THRESHOLD_GROWTH_FACTOR) as usize;
-
-        debug!(
-            "GC freed {} bytes, {} remaining",
-            prev_bytes_allocated - self.bytes_allocated,
-            self.bytes_allocated
-        );
-        debug!("Next GC threshold: {}", self.next_gc);
     }
 
     /// Returns true if the given string is marked
@@ -588,60 +367,27 @@ impl Drop for GC {
     fn drop(&mut self) {
         // Convert raw pointers back to Box to properly drop them. The GC
         // should be the only owner of these pointers, so this is safe
-        for &ptr in &self.bound_methods {
-            debug!("Freeing bound method at {:?}", ptr);
-            unsafe {
-                let _ = Box::from_raw(ptr);
-            }
+        macro_rules! free_all {
+            ($($field:ident),*) => {
+                $(
+                    for &ptr in &self.$field {
+                        unsafe {
+                            let _ = Box::from_raw(ptr);
+                        }
+                    }
+                )*
+            };
         }
 
-        for &ptr in &self.class_instances {
-            debug!("Freeing class instance at {:?}", ptr);
-            unsafe {
-                let _ = Box::from_raw(ptr);
-            }
-        }
-
-        for &ptr in &self.classes {
-            debug!("Freeing class at {:?}", ptr);
-            unsafe {
-                let _ = Box::from_raw(ptr);
-            }
-        }
-
-        for &ptr in &self.upvalues {
-            debug!("Freeing upvalue at {:?}", ptr);
-            unsafe {
-                let _ = Box::from_raw(ptr);
-            }
-        }
-
-        for &ptr in &self.natives {
-            debug!("Freeing native at {:?}", ptr);
-            unsafe {
-                let _ = Box::from_raw(ptr);
-            }
-        }
-
-        for &ptr in &self.closures {
-            debug!("Freeing closure at {:?}", ptr);
-            unsafe {
-                let _ = Box::from_raw(ptr);
-            }
-        }
-
-        for &ptr in &self.functions {
-            debug!("Freeing function at {:?}", ptr);
-            unsafe {
-                let _ = Box::from_raw(ptr);
-            }
-        }
-
-        for &ptr in &self.strings {
-            debug!("Freeing string at {:?}", ptr);
-            unsafe {
-                let _ = Box::from_raw(ptr);
-            }
-        }
+        free_all!(
+            bound_methods,
+            class_instances,
+            classes,
+            upvalues,
+            natives,
+            closures,
+            functions,
+            strings
+        );
     }
 }
