@@ -1,4 +1,10 @@
-use super::value::Value;
+//! Native function bindings for the virtual machine.
+//!
+//! This module provides the interface between the runtime and host system
+//! functionality. Native functions are implemented in Rust and exposed to
+//! the programs through the [`NativeFunc`] wrapper.
+
+use crate::value::Value;
 
 #[derive(Debug, Clone)]
 pub struct NativeFunc {
@@ -11,7 +17,8 @@ impl NativeFunc {
     pub fn call(&self, args: &[Value]) -> Result<Value, String> {
         if args.len() as u8 != self.arity {
             return Err(format!(
-                "Expected {} arguments, but got {}.",
+                "Function '{}' expects {} argument(s), but got {}",
+                self.name,
                 self.arity,
                 args.len()
             ));
@@ -21,7 +28,9 @@ impl NativeFunc {
     }
 }
 
-/// Returns the current time in seconds since the start of the program
+// Built-in native functions
+
+/// Returns the current Unix timestamp in seconds with millisecond precision.
 fn clock(_args: &[Value]) -> Result<Value, String> {
     let now = std::time::SystemTime::now();
     let since_unix_epoch = now
