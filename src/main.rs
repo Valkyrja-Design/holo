@@ -7,6 +7,6 @@ fn main() {
     if args.len() == 2 {
         holo::interpret(&args[1], io::stdout(), io::stderr());
     } else {
-        eprintln!("Usage: holo [path]");
+        eprintln!("Usage: holo <file>");
     }
 }
