@@ -69,6 +69,7 @@ pub fn disassemble_instr(chunk: &Chunk, offset: usize) -> usize {
         OpCode::Inherit => simple_instr("INHERIT", offset),
         OpCode::GetSuper => instr_with_const8(chunk, "GET_SUPER", offset),
         OpCode::SuperInvoke => invoke_instr(chunk, "SUPER_INVOKE", offset),
+        OpCode::Stringify => simple_instr("STRINGIFY", offset),
     }
 }
 

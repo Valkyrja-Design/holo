@@ -139,6 +139,10 @@ pub enum OpCode {
     /// right below it. Accesses using `this` in the superclass method will resolve to the
     /// subclass instance
     SuperInvoke,
+    /// STRINGIFY
+    /// Replaces the top value on the stack with its string representation. Used to coerce
+    /// interpolated expressions to strings before concatenation
+    Stringify,
 }
 
 impl From<u8> for OpCode {
@@ -197,6 +201,7 @@ impl From<u8> for OpCode {
             50 => Self::Inherit,
             51 => Self::GetSuper,
             52 => Self::SuperInvoke,
+            53 => Self::Stringify,
             _ => unreachable!("invalid opcode!"),
         }
     }

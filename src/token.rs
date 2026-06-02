@@ -37,6 +37,15 @@ pub enum TokenKind {
     // Literals
     Identifier,
     String,
+    /// The leading chunk of an interpolated string: the text from the opening
+    /// `"` up to and including the first `{`.
+    StringInterp,
+    /// A middle chunk of an interpolated string: the text from a `}` up to and
+    /// including the next `{`. Another embedded expression follows.
+    StringInterpCont,
+    /// The final chunk of an interpolated string: the text from a `}` up to and
+    /// including the closing `"`.
+    StringInterpEnd,
     Number,
 
     // Keywords,

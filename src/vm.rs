@@ -145,6 +145,21 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     )?;
                 }
                 OpCode::Divide => self.binary_divide()?,
+                OpCode::Stringify => {
+                    if self.stack.is_empty() {
+                        return None;
+                    }
+
+                    let value = self.stack.pop().unwrap();
+                    let rendered = format!("{value}");
+                    let str_ptr = self
+                        .str_intern_table
+                        .intern_owned(rendered, &mut self.gc);
+                    self.stack.push(Value::String(str_ptr));
+
+                    // Attempt to trigger a garbage collection cycle
+                    self.attempt_gc();
+                }
                 OpCode::Equal => {
                     if self.stack.len() < 2 {
                         return None;

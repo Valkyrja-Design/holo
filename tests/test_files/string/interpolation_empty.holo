@@ -1,0 +1,1 @@
+print "empty {} braces"; // Error: an interpolation can't be empty

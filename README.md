@@ -52,6 +52,15 @@ class Dog : Animal {
 Dog("Rex").speak(); // Rex barks
 ```
 
+### String interpolation
+
+Embed any expression in a string literal with `{ }`:
+
+```
+var name = "Rex";
+print "Hello, {name}! 1 + 2 = {1 + 2}"; // Hello, Rex! 1 + 2 = 3
+```
+
 ## Helpful error messages
 
 When something goes wrong at compile time, Holo points at the exact span with a
@@ -103,6 +112,7 @@ resolved through a symbol table built during compilation.
 - First-class functions and closures
 - Classes with methods, single inheritance
 - Control flow: `if`/`else`, `while`, `for`, `break`, and `continue`
+- String interpolation with embedded expressions (`"sum: {a + b}"`)
 - Rust-style compile diagnostics with line, column, and caret spans
 - A handful of native functions (e.g. `clock`)
 

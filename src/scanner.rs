@@ -23,6 +23,10 @@ pub struct Scanner<'a> {
     start_column: usize,
     /// Structured reason for the most recently produced [`TokenKind::Error`] token.
     last_error: Option<ScanError>,
+    /// One entry per interpolation currently being scanned. Each entry counts the
+    /// number of unmatched `{` seen inside the embedded expression so that the `}`
+    /// closing the interpolation can be told apart from braces nested within it.
+    interp_stack: Vec<u32>,
 }
 
 impl<'a> Scanner<'a> {
@@ -44,6 +48,7 @@ impl<'a> Scanner<'a> {
             curr_column: 1,
             start_column: 1,
             last_error: None,
+            interp_stack: Vec::new(),
         }
     }
 
@@ -72,8 +77,27 @@ impl<'a> Scanner<'a> {
             // Single-character tokens
             '(' => self.make_token(TokenKind::LeftParen),
             ')' => self.make_token(TokenKind::RightParen),
-            '{' => self.make_token(TokenKind::LeftBrace),
-            '}' => self.make_token(TokenKind::RightBrace),
+            '{' => {
+                // Track brace nesting inside an interpolated expression so the
+                // matching '}' is not mistaken for the end of the interpolation.
+                if let Some(depth) = self.interp_stack.last_mut() {
+                    *depth += 1;
+                }
+                self.make_token(TokenKind::LeftBrace)
+            }
+            '}' => match self.interp_stack.last_mut() {
+                // A '}' at depth 0 ends the current interpolation and resumes
+                // scanning the surrounding string literal.
+                Some(0) => {
+                    self.interp_stack.pop();
+                    self.scan_string_body(true)
+                }
+                Some(depth) => {
+                    *depth -= 1;
+                    self.make_token(TokenKind::RightBrace)
+                }
+                None => self.make_token(TokenKind::RightBrace),
+            },
             ';' => self.make_token(TokenKind::Semicolon),
             '?' => self.make_token(TokenKind::Question),
             ':' => self.make_token(TokenKind::Colon),
@@ -152,11 +176,39 @@ impl<'a> Scanner<'a> {
     }
 
     fn scan_string(&mut self) -> Token<'a> {
+        self.scan_string_body(false)
+    }
+
+    /// Scans the body of a string literal starting just after an opening
+    /// delimiter (either the opening `"` or the `}` closing an interpolation).
+    ///
+    /// `continuation` is true when resuming after an interpolated expression, so
+    /// that the chunk is tagged as a continuation/end chunk rather than an
+    /// opening one. The literal ends at a closing `"` (yielding a `String` or
+    /// `StringInterpEnd` token) or is interrupted by a `{` (yielding a
+    /// `StringInterp` or `StringInterpCont` token), in which case the embedded
+    /// expression is scanned as ordinary tokens and resumed at the matching `}`.
+    fn scan_string_body(&mut self, continuation: bool) -> Token<'a> {
         loop {
             match self.peek() {
                 Some('"') => {
                     self.advance(); // Consume the closing quote
-                    return self.make_token(TokenKind::String);
+                    let kind = if continuation {
+                        TokenKind::StringInterpEnd
+                    } else {
+                        TokenKind::String
+                    };
+                    return self.make_token(kind);
+                }
+                Some('{') => {
+                    self.advance(); // Consume the opening brace
+                    self.interp_stack.push(0);
+                    let kind = if continuation {
+                        TokenKind::StringInterpCont
+                    } else {
+                        TokenKind::StringInterp
+                    };
+                    return self.make_token(kind);
                 }
                 Some(_) => {
                     self.advance();

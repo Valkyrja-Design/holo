@@ -137,7 +137,7 @@ pub struct Compiler<'a, 'b, W: Write> {
 }
 
 impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
-    const RULES: [ParseRule<'a, 'b, W>; 50] = [
+    const RULES: [ParseRule<'a, 'b, W>; 53] = [
         ParseRule {
             prefix_rule: Some(Self::grouping),
             infix_rule: Some(Self::call),
@@ -283,6 +283,21 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             infix_rule: None,
             precedence: Precedence::None,
         }, // String
+        ParseRule {
+            prefix_rule: Some(Self::string),
+            infix_rule: None,
+            precedence: Precedence::None,
+        }, // StringInterp
+        ParseRule {
+            prefix_rule: None,
+            infix_rule: None,
+            precedence: Precedence::None,
+        }, // StringInterpCont
+        ParseRule {
+            prefix_rule: None,
+            infix_rule: None,
+            precedence: Precedence::None,
+        }, // StringInterpEnd
         ParseRule {
             prefix_rule: Some(Self::number),
             infix_rule: None,
@@ -1091,17 +1106,67 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     fn string(&mut self, _: bool) -> Result<'a, ()> {
         match self.prev_token.kind {
             TokenKind::String => {
-                let s = &self.prev_token.lexeme[1..self.prev_token.lexeme.len() - 1];
-                let str_ptr = self.str_intern_table.intern_slice(s, self.gc);
+                // A plain string literal with no interpolation.
+                let lexeme = self.prev_token.lexeme;
+                self.emit_string_chunk(lexeme)
+            }
+            TokenKind::StringInterp => {
+                // An interpolated string compiles to a left-folded chain of
+                // concatenations: each literal chunk and each embedded
+                // expression (coerced to a string) is appended in turn.
+                let lexeme = self.prev_token.lexeme;
+                self.emit_string_chunk(lexeme)?;
 
-                self.emit_opcode_with_constant_long(
-                    OpCode::Constant,
-                    OpCode::ConstantLong,
-                    Value::String(str_ptr),
-                )
+                loop {
+                    // Compile the embedded expression; its value is left on the
+                    // stack, then coerced to a string and concatenated. An empty
+                    // interpolation (`{}`) makes the next token a continuation
+                    // chunk, which has no prefix rule and so reports "expected
+                    // expression" here.
+                    self.expression()?;
+                    self.emit_opcode(OpCode::Stringify);
+                    self.emit_opcode(OpCode::Add);
+
+                    // The expression must be followed by a continuation chunk:
+                    // `StringInterpCont` if another expression follows, or
+                    // `StringInterpEnd` if this is the final chunk.
+                    if !self.check(TokenKind::StringInterpCont)
+                        && !self.check(TokenKind::StringInterpEnd)
+                    {
+                        return Err(CompileError::new(
+                            self.curr_token.clone(),
+                            CompileErrorKind::Expected(Expected::RightBraceToCloseInterpolation),
+                        ));
+                    }
+
+                    self.advance()?;
+                    let chunk = self.prev_token.lexeme;
+                    self.emit_string_chunk(chunk)?;
+                    self.emit_opcode(OpCode::Add);
+
+                    if self.prev_token.kind == TokenKind::StringInterpEnd {
+                        break;
+                    }
+                }
+
+                Ok(())
             }
             _ => unreachable!("string() called on a non-string token"),
         }
+    }
+
+    /// Interns a string literal chunk and emits a constant for it. The `lexeme`
+    /// includes one delimiter character on each side (`"`/`{` or `}`/`"`), both
+    /// of which are stripped to recover the literal text.
+    fn emit_string_chunk(&mut self, lexeme: &'a str) -> Result<'a, ()> {
+        let s = &lexeme[1..lexeme.len() - 1];
+        let str_ptr = self.str_intern_table.intern_slice(s, self.gc);
+
+        self.emit_opcode_with_constant_long(
+            OpCode::Constant,
+            OpCode::ConstantLong,
+            Value::String(str_ptr),
+        )
     }
 
     fn grouping(&mut self, _: bool) -> Result<'a, ()> {

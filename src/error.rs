@@ -57,6 +57,7 @@ pub enum Expected {
     LeftBraceBeforeClassBody,
     RightBraceAfterClassBody,
     RightBraceToCloseBlock,
+    RightBraceToCloseInterpolation,
     Colon,
     DotAfterSuper,
 }
@@ -84,6 +85,7 @@ impl Display for Expected {
             Expected::LeftBraceBeforeClassBody => "'{' before class body",
             Expected::RightBraceAfterClassBody => "'}' after class body",
             Expected::RightBraceToCloseBlock => "'}' to close block",
+            Expected::RightBraceToCloseInterpolation => "'}' to close interpolation",
             Expected::Colon => "':'",
             Expected::DotAfterSuper => "'.' after 'super'",
         };

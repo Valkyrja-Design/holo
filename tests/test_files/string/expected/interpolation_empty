@@ -1,0 +1,5 @@
+error: expected expression
+ --> line 1:15
+  |
+1 | print "empty {} braces"; // Error: an interpolation can't be empty
+  |               ^^^^^^^^^

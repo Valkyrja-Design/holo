@@ -1,0 +1,30 @@
+// Interpolated expressions are wrapped in `{ }` inside a string literal.
+var name = "Rex";
+var age = 3;
+print "Hello, {name}! You are {age} years old."; // expect: Hello, Rex! You are 3 years old.
+
+// Arbitrary expressions, not just variables.
+var a = 2;
+var b = 5;
+print "{a} + {b} = {a + b}"; // expect: 2 + 5 = 7
+
+// Adjacent interpolations with no text between them.
+print "{a}{b}"; // expect: 25
+
+// Interpolation at the very start and end of the string.
+print "{a} leading"; // expect: 2 leading
+print "trailing {a}"; // expect: trailing 2
+
+// Non-string values are coerced to their display form.
+print "bool {true} nil {nil}"; // expect: bool true nil nil
+
+// A string with no interpolation is unaffected.
+print "just braces? none here"; // expect: just braces? none here
+
+// Interpolations may nest: an embedded expression can be another
+// interpolated string.
+print "outer {"inner {a}"} done"; // expect: outer inner 2 done
+
+// Function calls work inside interpolations.
+fun double(n) { return n + n; }
+print "doubled: {double(a)}"; // expect: doubled: 4
