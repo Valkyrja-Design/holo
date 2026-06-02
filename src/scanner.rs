@@ -1,5 +1,14 @@
-use super::token::{Token, TokenKind};
+//! Lexical analysis for the Holo programming language.
+//!
+//! This module provides a [`Scanner`] that tokenizes Holo source code into a stream
+//! of tokens for the parser.
 
+use crate::token::{Token, TokenKind};
+
+/// A lexical analyzer that converts Holo source code into tokens.
+///
+/// The scanner uses a two-character lookahead buffer to efficiently handle
+/// multi-character operators and comments.
 pub struct Scanner<'a> {
     source: &'a str,
     iter: std::str::CharIndices<'a>,
@@ -44,6 +53,7 @@ impl<'a> Scanner<'a> {
         let c = c.unwrap();
 
         match c {
+            // Single-character tokens
             '(' => self.make_token(TokenKind::LeftParen),
             ')' => self.make_token(TokenKind::RightParen),
             '{' => self.make_token(TokenKind::LeftBrace),
@@ -53,89 +63,30 @@ impl<'a> Scanner<'a> {
             ':' => self.make_token(TokenKind::Colon),
             ',' => self.make_token(TokenKind::Comma),
             '.' => self.make_token(TokenKind::Dot),
-            '-' => match self.peek() {
-                Some('=') => {
-                    self.advance();
 
-                    self.make_token(TokenKind::MinusEqual)
-                }
-                Some('-') => {
-                    self.advance();
-
-                    self.make_token(TokenKind::MinusMinus)
-                }
-                _ => self.make_token(TokenKind::Minus),
-            },
-            '+' => match self.peek() {
-                Some('=') => {
-                    self.advance();
-
-                    self.make_token(TokenKind::PlusEqual)
-                }
-                Some('+') => {
-                    self.advance();
-
-                    self.make_token(TokenKind::PlusPlus)
-                }
-                _ => self.make_token(TokenKind::Plus),
-            },
-            '/' => {
-                if let Some('=') = self.peek() {
-                    self.advance();
-
-                    self.make_token(TokenKind::SlashEqual)
-                } else {
-                    self.make_token(TokenKind::Slash)
-                }
-            }
-            '*' => {
-                if let Some('=') = self.peek() {
-                    self.advance();
-
-                    self.make_token(TokenKind::StarEqual)
-                } else {
-                    self.make_token(TokenKind::Star)
-                }
-            }
-            '!' => {
-                if let Some('=') = self.peek() {
-                    self.advance();
-
-                    self.make_token(TokenKind::BangEqual)
-                } else {
-                    self.make_token(TokenKind::Bang)
-                }
-            }
-            '=' => {
-                if let Some('=') = self.peek() {
-                    self.advance();
-
-                    self.make_token(TokenKind::EqualEqual)
-                } else {
-                    self.make_token(TokenKind::Equal)
-                }
-            }
+            // Multi-character operators
+            '-' => self.scan_compound_operator(
+                [('=', TokenKind::MinusEqual), ('-', TokenKind::MinusMinus)],
+                TokenKind::Minus,
+            ),
+            '+' => self.scan_compound_operator(
+                [('=', TokenKind::PlusEqual), ('+', TokenKind::PlusPlus)],
+                TokenKind::Plus,
+            ),
+            '/' => self.scan_compound_operator([('=', TokenKind::SlashEqual)], TokenKind::Slash),
+            '*' => self.scan_compound_operator([('=', TokenKind::StarEqual)], TokenKind::Star),
+            '!' => self.scan_compound_operator([('=', TokenKind::BangEqual)], TokenKind::Bang),
+            '=' => self.scan_compound_operator([('=', TokenKind::EqualEqual)], TokenKind::Equal),
             '>' => {
-                if let Some('=') = self.peek() {
-                    self.advance();
-
-                    self.make_token(TokenKind::GreaterEqual)
-                } else {
-                    self.make_token(TokenKind::Greater)
-                }
+                self.scan_compound_operator([('=', TokenKind::GreaterEqual)], TokenKind::Greater)
             }
-            '<' => {
-                if let Some('=') = self.peek() {
-                    self.advance();
+            '<' => self.scan_compound_operator([('=', TokenKind::LessEqual)], TokenKind::Less),
 
-                    self.make_token(TokenKind::LessEqual)
-                } else {
-                    self.make_token(TokenKind::Less)
-                }
-            }
+            // Literals
             '"' => self.scan_string(),
-            c if c.is_digit(10) => self.scan_number(),
-            c if Self::is_alpha(c) => self.scan_identifier(),
+            c if c.is_ascii_digit() => self.scan_number(),
+            c if Self::is_identifier_start(c) => self.scan_identifier(),
+
             _ => self.make_error_token("Unexpected char"),
         }
     }
@@ -162,6 +113,22 @@ impl<'a> Scanner<'a> {
         self.lookahead[1].map(|(_, c)| c)
     }
 
+    fn scan_compound_operator<const N: usize>(
+        &mut self,
+        compounds: [(char, TokenKind); N],
+        fallback: TokenKind,
+    ) -> Token<'a> {
+        if let Some(next_char) = self.peek() {
+            for (expected, token_kind) in compounds {
+                if next_char == expected {
+                    self.advance();
+                    return self.make_token(token_kind);
+                }
+            }
+        }
+        self.make_token(fallback)
+    }
+
     fn scan_string(&mut self) -> Token<'a> {
         loop {
             match self.peek() {
@@ -169,14 +136,15 @@ impl<'a> Scanner<'a> {
                     self.advance(); // Consume the closing quote
                     return self.make_token(TokenKind::String);
                 }
-                Some(c) => {
-                    if c == '\n' {
-                        self.curr_line += 1;
-                    }
+                Some('\n') => {
+                    self.curr_line += 1;
+                    self.advance();
+                }
+                Some(_) => {
                     self.advance();
                 }
                 None => {
-                    return self.make_error_token("Unterminated string");
+                    return self.make_error_token("Unterminated string literal");
                 }
             }
         }
@@ -197,12 +165,11 @@ impl<'a> Scanner<'a> {
     }
 
     fn scan_identifier(&mut self) -> Token<'a> {
-        loop {
-            match self.peek() {
-                Some(c) if c.is_digit(10) || Self::is_alpha(c) => {
-                    self.advance();
-                }
-                _ => break,
+        while let Some(c) = self.peek() {
+            if Self::is_identifier_continue(c) {
+                self.advance();
+            } else {
+                break;
             }
         }
 
@@ -236,33 +203,26 @@ impl<'a> Scanner<'a> {
     }
 
     fn consume_digits(&mut self) {
-        loop {
-            match self.peek() {
-                Some(c) if c.is_digit(10) => {
-                    self.advance();
-                }
-                _ => break,
+        while let Some(c) = self.peek() {
+            if c.is_ascii_digit() {
+                self.advance();
+            } else {
+                break;
             }
         }
     }
 
     fn skip_whitespace(&mut self) -> Option<Token<'a>> {
         loop {
-            match self.peek() {
-                Some(' ') => {
+            match self.peek()? {
+                ' ' | '\t' | '\r' => {
                     self.advance();
                 }
-                Some('\t') => {
-                    self.advance();
-                }
-                Some('\r') => {
-                    self.advance();
-                }
-                Some('\n') => {
+                '\n' => {
                     self.curr_line += 1;
                     self.advance();
                 }
-                Some('/') => {
+                '/' => {
                     match self.peek_next() {
                         Some('/') => {
                             // Consume until end of line
@@ -286,14 +246,13 @@ impl<'a> Scanner<'a> {
                             self.advance();
 
                             // Consume until "*/"
-                            'l1: loop {
+                            loop {
                                 match self.peek() {
                                     Some('*') => match self.peek_next() {
                                         Some('/') => {
                                             self.advance();
                                             self.advance();
-
-                                            break 'l1;
+                                            break;
                                         }
                                         Some(_) => {
                                             self.advance();
@@ -345,8 +304,12 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn is_alpha(c: char) -> bool {
+    fn is_identifier_start(c: char) -> bool {
         c.is_alphabetic() || c == '_'
+    }
+
+    fn is_identifier_continue(c: char) -> bool {
+        c.is_alphanumeric() || c == '_'
     }
 }
 
@@ -361,7 +324,10 @@ mod tests {
             .join("tests")
             .join("test_files")
             .join("scanning");
-        let entries = std::fs::read_dir(&base_dir).unwrap();
+
+        let Ok(entries) = std::fs::read_dir(&base_dir) else {
+            panic!("Could not read test directory: {}", base_dir.display());
+        };
 
         for entry in entries {
             let entry = entry.unwrap();
