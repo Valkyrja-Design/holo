@@ -1,3 +1,3 @@
-// [line 2] Error: Unterminated string literal
+// Error: the string literal is never closed with a '"'
 "this string has no close quote
 weird

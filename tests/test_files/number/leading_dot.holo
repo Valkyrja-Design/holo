@@ -1,2 +1,2 @@
-// [line 2] Error at '.': Expected expression
+// Error: '.' can't begin an expression (a number needs a leading digit)
 .123;

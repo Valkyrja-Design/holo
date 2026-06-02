@@ -1,1 +1,5 @@
-[line 4] Error at '(': Expected superclass name after ':'
+error: expected superclass name after ':'
+ --> line 4:13
+  |
+4 | class Bar : (Foo) {}
+  |             ^

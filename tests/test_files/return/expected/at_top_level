@@ -1,1 +1,5 @@
-[line 1] Error at 'return': 'return' statement can only be used inside a function
+error: 'return' can only be used inside a function
+ --> line 1:1
+  |
+1 | return "wat"; // Error: 'return' is only allowed inside a function body
+  | ^^^^^^

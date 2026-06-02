@@ -1,2 +1,11 @@
-[line 259] Error at ',': Cannot have more than 255 arguments
-[line 261] Error at '}': Expected expression
+error: cannot have more than 255 arguments
+   --> line 260:6
+    |
+260 |      a); // Error: a call can't have more than 255 arguments (this is the 256th)
+    |      ^
+
+error: expected expression
+   --> line 261:1
+    |
+261 | }
+    | ^

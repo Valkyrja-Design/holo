@@ -3,25 +3,30 @@
         kind: Identifier,
         lexeme: "space",
         line: 1,
+        column: 1,
     },
     Token {
         kind: Identifier,
         lexeme: "tabs",
         line: 1,
+        column: 10,
     },
     Token {
         kind: Identifier,
         lexeme: "newlines",
         line: 1,
+        column: 18,
     },
     Token {
         kind: Identifier,
         lexeme: "end",
         line: 12,
+        column: 1,
     },
     Token {
         kind: Eof,
         lexeme: "",
         line: 13,
+        column: 1,
     },
 ]

@@ -1,2 +1,2 @@
-// [line 2] Error at '123': Expected '{' before function body
+// Error: a function body must be a block enclosed in '{ }'
 fun f() 123;

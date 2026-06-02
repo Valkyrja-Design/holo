@@ -1,1 +1,5 @@
-[line 258] Error at ',': Cannot have more than 255 parameters
+error: cannot have more than 255 parameters
+   --> line 258:11
+    |
+258 |     a255, a) {} // Error: a method can't have more than 255 parameters (this is the 256th)
+    |           ^

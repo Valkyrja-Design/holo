@@ -1,3 +1,2 @@
-// [line 3] Error at '{': Expected expression
-// [line 3] Error at ')': Expected ';' at the end of statement
+// Error: the loop initializer must be an expression, not a block
 for ({}; a < 2; a = a + 1) {}

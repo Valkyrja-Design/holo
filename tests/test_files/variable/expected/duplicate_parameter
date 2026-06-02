@@ -1,2 +1,11 @@
-[line 2] Error at 'arg': Redeclaration of variable 'arg'
-[line 4] Error at '}': Expected expression
+error: variable 'arg' is already declared in this scope
+ --> line 2:9
+  |
+2 |         arg) { // Error: 'arg' is already declared as a parameter
+  |         ^^^
+
+error: expected expression
+ --> line 4:1
+  |
+4 | }
+  | ^

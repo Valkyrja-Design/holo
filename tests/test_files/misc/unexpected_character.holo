@@ -1,2 +1,2 @@
-// [line 2] Error: Unexpected character |
+// Error: '|' is not a valid character in the language
 foo(a | b);

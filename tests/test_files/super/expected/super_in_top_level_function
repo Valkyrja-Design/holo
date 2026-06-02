@@ -1,1 +1,5 @@
-[line 1] Error at 'super': Cannot use 'super' outside of a class
+error: 'super' can only be used inside a class
+ --> line 1:1
+  |
+1 | super.bar(); // Error: 'super' can only be used inside a class method
+  | ^^^^^

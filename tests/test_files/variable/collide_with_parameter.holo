@@ -1,3 +1,3 @@
 fun foo(a) {
-  var a; // [line 2] Error at 'a': Redeclaration of variable 'a'
+  var a; // Error: 'a' is already declared as a parameter in this scope
 }

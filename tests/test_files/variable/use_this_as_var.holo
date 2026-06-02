@@ -1,2 +1,2 @@
-// [line 2] Error at 'this': Expected variable name
+// Error: 'this' is a reserved keyword and can't be used as a variable name
 var this = "value";

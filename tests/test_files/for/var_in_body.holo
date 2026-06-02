@@ -1,2 +1,2 @@
-// [line 2] Error at 'var': Expected expression
+// Error: a variable declaration can't be the body of a 'for' (a statement is required)
 for (;;) var foo;

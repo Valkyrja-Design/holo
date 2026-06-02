@@ -2,6 +2,7 @@ use crate::value::{BoundMethod, Class, ClassInstance};
 
 use super::{
     chunk::{Chunk, OpCode},
+    error::RuntimeError,
     gc,
     table::StringInternTable,
     value::{Closure, Upvalue, Value},
@@ -113,7 +114,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 OpCode::Negate => match self.stack.last_mut() {
                     Some(Value::Number(value)) => *value = -*value,
                     Some(_) => {
-                        self.runtime_error("Operand to '-' must be a number");
+                        self.runtime_error(RuntimeError::NegateOperandNotNumber);
                         return None;
                     }
                     _ => {
@@ -123,7 +124,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 OpCode::Not => match self.stack.last_mut() {
                     Some(Value::Bool(value)) => *value = !*value,
                     Some(_) => {
-                        self.runtime_error("Operand to '!' must be a bool");
+                        self.runtime_error(RuntimeError::NotOperandNotBool);
                         return None;
                     }
                     _ => {
@@ -132,10 +133,16 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 },
                 OpCode::Add => self.binary_add()?,
                 OpCode::Sub => {
-                    self.binary_number_op(|l, r| *l -= r, "Operands to '-' must be numbers")?;
+                    self.binary_number_op(
+                        |l, r| *l -= r,
+                        RuntimeError::BinaryOperandsNotNumbers("-"),
+                    )?;
                 }
                 OpCode::Mult => {
-                    self.binary_number_op(|l, r| *l *= r, "Operands to '*' must be numbers")?;
+                    self.binary_number_op(
+                        |l, r| *l *= r,
+                        RuntimeError::BinaryOperandsNotNumbers("*"),
+                    )?;
                 }
                 OpCode::Divide => self.binary_divide()?,
                 OpCode::Equal => {
@@ -161,25 +168,25 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 OpCode::Greater => {
                     self.binary_number_ordering_op(
                         |l, r| l > r,
-                        "Operands to '>' must be numbers",
+                        RuntimeError::BinaryOperandsNotNumbers(">"),
                     )?;
                 }
                 OpCode::GreaterEqual => {
                     self.binary_number_ordering_op(
                         |l, r| l >= r,
-                        "Operands to '>=' must be numbers",
+                        RuntimeError::BinaryOperandsNotNumbers(">="),
                     )?;
                 }
                 OpCode::Less => {
                     self.binary_number_ordering_op(
                         |l, r| l < r,
-                        "Operands to '<' must be numbers",
+                        RuntimeError::BinaryOperandsNotNumbers("<"),
                     )?;
                 }
                 OpCode::LessEqual => {
                     self.binary_number_ordering_op(
                         |l, r| l <= r,
-                        "Operands to '<=' must be numbers",
+                        RuntimeError::BinaryOperandsNotNumbers("<="),
                     )?;
                 }
                 OpCode::Ternary => {
@@ -200,7 +207,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                             }
                         }
                         _ => {
-                            self.runtime_error("Expected a boolean as ternary operator predicate");
+                            self.runtime_error(RuntimeError::TernaryPredicateNotBool);
                             return None;
                         }
                     }
@@ -291,7 +298,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                             }
                         }
                         Some(_) => {
-                            self.runtime_error("Expected `bool` as condition");
+                            self.runtime_error(RuntimeError::ConditionNotBool);
                             return None;
                         }
                         _ => unreachable!("No value in the stack"),
@@ -307,7 +314,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                             }
                         }
                         Some(_) => {
-                            self.runtime_error("Expected `bool` as condition");
+                            self.runtime_error(RuntimeError::ConditionNotBool);
                             return None;
                         }
                         _ => unreachable!("No value in the stack"),
@@ -381,7 +388,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     // Get the field from the instance
                     let instance = self.stack.last().unwrap().as_class_instance();
                     if instance.is_none() {
-                        self.runtime_error("Property must be accessed on a class instance");
+                        self.runtime_error(RuntimeError::PropertyOnNonInstance);
                         return None;
                     }
 
@@ -404,7 +411,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     let instance = self.stack.last().unwrap().as_class_instance_ptr();
 
                     if instance.is_none() {
-                        self.runtime_error("Property must be accessed on a class instance");
+                        self.runtime_error(RuntimeError::PropertyOnNonInstance);
                         return None;
                     }
 
@@ -428,7 +435,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     // Leave the subclass on the stack
 
                     if superclass.is_none() {
-                        self.runtime_error("Superclass must be a class");
+                        self.runtime_error(RuntimeError::SuperclassNotClass);
                         return None;
                     }
 
@@ -487,7 +494,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                             Some(())
                         }
                         Err(err) => {
-                            self.runtime_error(&err);
+                            self.runtime_error(RuntimeError::Native(err));
                             None
                         }
                     }
@@ -509,13 +516,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                         // Call the initializer with the instance as the receiver
                         self.call(*init, arity, arg_count)?;
                     } else if arg_count != 0 {
-                        self.runtime_error(
-                            format!(
-                                "Expected 0 arguments for class initializer, got {}",
-                                arg_count
-                            )
-                            .as_str(),
-                        );
+                        self.runtime_error(RuntimeError::InitializerArgCount(arg_count));
                         return None;
                     }
 
@@ -532,7 +533,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                     self.call((*bound_method).method, arity, arg_count)
                 }
                 _ => {
-                    self.runtime_error("Can only call functions and classes");
+                    self.runtime_error(RuntimeError::NotCallable);
                     None
                 }
             }
@@ -541,10 +542,10 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
 
     fn call(&mut self, closure: *mut Closure, arity: u8, arg_count: u8) -> Option<()> {
         if arity != arg_count {
-            self.runtime_error(&format!(
-                "Incorrect number of arguments: expected {}, got {}",
-                arity, arg_count
-            ));
+            self.runtime_error(RuntimeError::ArgCountMismatch {
+                expected: arity,
+                got: arg_count,
+            });
             return None;
         }
 
@@ -586,9 +587,9 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 Some(())
             }
             _ => {
-                self.runtime_error(
-                    format!("Undefined variable '{}'", self.global_var_names[index]).as_str(),
-                );
+                self.runtime_error(RuntimeError::UndefinedVariable(
+                    self.global_var_names[index].clone(),
+                ));
                 None
             }
         }
@@ -608,9 +609,9 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 Some(())
             }
             _ => {
-                self.runtime_error(
-                    format!("Undefined variable '{}'", self.global_var_names[index]).as_str(),
-                );
+                self.runtime_error(RuntimeError::UndefinedVariable(
+                    self.global_var_names[index].clone(),
+                ));
                 None
             }
         }
@@ -746,7 +747,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
             return self.invoke_from_class(unsafe { (*instance).class }, method_name, arg_count);
         }
 
-        self.runtime_error("Can only call methods on class instances");
+        self.runtime_error(RuntimeError::MethodOnNonInstance);
         None
     }
 
@@ -775,7 +776,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 return self.call(*method, (**method).arity(), arg_count);
             }
 
-            self.runtime_error(&format!("Undefined method '{}'", method_name));
+            self.runtime_error(RuntimeError::UndefinedMethod(method_name.to_string()));
             None
         }
     }
@@ -784,7 +785,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         let method = unsafe { (*class).methods.get(method_name) };
 
         if method.is_none() {
-            self.runtime_error(&format!("Undefined property '{}'", method_name));
+            self.runtime_error(RuntimeError::UndefinedProperty(method_name.to_string()));
             return None;
         }
 
@@ -801,7 +802,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         Some(())
     }
 
-    fn binary_number_op<F>(&mut self, op: F, err: &str) -> Option<()>
+    fn binary_number_op<F>(&mut self, op: F, err: RuntimeError) -> Option<()>
     where
         F: FnOnce(&mut f64, f64),
     {
@@ -824,7 +825,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         }
     }
 
-    fn binary_number_ordering_op<F>(&mut self, op: F, err: &str) -> Option<()>
+    fn binary_number_ordering_op<F>(&mut self, op: F, err: RuntimeError) -> Option<()>
     where
         F: FnOnce(f64, f64) -> bool,
     {
@@ -877,7 +878,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 Some(())
             },
             _ => {
-                self.runtime_error("Operands to '+' must be two numbers or strings");
+                self.runtime_error(RuntimeError::AddOperandsInvalid);
                 None
             }
         }
@@ -897,7 +898,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
                 Some(())
             }
             _ => {
-                self.runtime_error("Operands to '/' must be numbers");
+                self.runtime_error(RuntimeError::BinaryOperandsNotNumbers("/"));
                 None
             }
         }
@@ -1025,9 +1026,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
 
     fn push(&mut self, value: Value) -> Option<()> {
         if self.stack.len() >= VEC_SIZE {
-            self.runtime_error(
-                format!("Stack overflow: maximum stack size is {}", VEC_SIZE).as_str(),
-            );
+            self.runtime_error(RuntimeError::StackOverflow(VEC_SIZE));
             return None;
         }
 
@@ -1080,7 +1079,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
         ret
     }
 
-    fn runtime_error(&mut self, err: &str) {
+    fn runtime_error(&mut self, err: RuntimeError) {
         // We have to write back the current ip to the current call frame on the call stack
         self.call_stack.last_mut().unwrap().ip = self.current_frame.ip;
 

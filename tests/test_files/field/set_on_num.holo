@@ -1,1 +1,1 @@
-123.foo = "value"; // expect: [line 1] Error at 'foo': Expected ';' at the end of statement
+123.foo = "value"; // Error: a number literal has no properties, so '.foo' can't be assigned

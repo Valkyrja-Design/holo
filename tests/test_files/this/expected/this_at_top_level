@@ -1,1 +1,5 @@
-[line 1] Error at 'this': Cannot use 'this' outside of a class
+error: 'this' can only be used inside a method
+ --> line 1:1
+  |
+1 | this; // Error: 'this' can only be used inside a class method
+  | ^^^^

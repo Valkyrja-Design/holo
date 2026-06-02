@@ -1,4 +1,4 @@
 class Foo {}
 
-// [line 4] Error at '(': Expected superclass name after ':'
+// Error: a superclass must be a bare class name, not a parenthesized expression
 class Bar : (Foo) {}

@@ -257,5 +257,5 @@ fun foo() {}
      a, // 253
      a, // 254
      a, // 255
-     a); // Error at 'a': Can't have more than 255 arguments.
+     a); // Error: a call can't have more than 255 arguments (this is the 256th)
 }

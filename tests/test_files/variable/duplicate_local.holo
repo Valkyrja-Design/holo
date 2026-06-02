@@ -1,5 +1,5 @@
 {
   var a = "value";
   print a;
-  var a = "other"; // [line 4] Error at 'a': Redeclaration of variable 'a'
+  var a = "other"; // Error: 'a' is already declared in this scope
 }

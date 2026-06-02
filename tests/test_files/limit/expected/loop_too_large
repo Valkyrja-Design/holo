@@ -1,1 +1,5 @@
-[line 2351] Error at '}': Too much jump distance
+error: jump distance is too large to encode
+    --> line 2351:1
+     |
+2351 | } // Error: the loop body exceeds the maximum jump offset the VM can encode
+     | ^

@@ -1,3 +1,17 @@
-[line 1] Error at 'continue': Cannot use 'continue' outside of a loop
-[line 6] Error at 'continue': Cannot use 'continue' outside of a loop
-[line 7] Error at '}': Expected expression
+error: 'continue' can only be used inside a loop
+ --> line 1:1
+  |
+1 | continue;
+  | ^^^^^^^^
+
+error: 'continue' can only be used inside a loop
+ --> line 6:9
+  |
+6 |         continue;
+  |         ^^^^^^^^
+
+error: expected expression
+ --> line 7:5
+  |
+7 |     }
+  |     ^

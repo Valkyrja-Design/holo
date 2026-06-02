@@ -1,2 +1,2 @@
-// [line 2] Error at 'nil': Expected variable name
+// Error: 'nil' is a reserved keyword and can't be used as a variable name
 var nil = "value";

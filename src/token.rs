@@ -63,12 +63,14 @@ pub enum TokenKind {
     Eof,
 }
 
-// TODO: Add column information
+/// A token extracted from the source code, tagged with its source location.
 #[derive(Debug, Clone)]
 pub struct Token<'a> {
     pub kind: TokenKind,
     pub lexeme: &'a str,
     pub line: usize,
+    /// 1-based column of the first character of the lexeme.
+    pub column: usize,
 }
 
 impl TokenKind {

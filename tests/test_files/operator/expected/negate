@@ -1,1 +1,5 @@
-[line 3] Error at '--': Expected expression
+error: expected expression
+ --> line 3:7
+  |
+3 | print --(-(3)); // expect: -3
+  |       ^^

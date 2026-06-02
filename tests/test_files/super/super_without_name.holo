@@ -2,6 +2,6 @@ class A {}
 
 class B : A {
   method() {
-    super.; // [line 5] Error at ';': Expected superclass method name
+    super.; // Error: 'super.' must be followed by a method name
   }
 }

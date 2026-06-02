@@ -1,2 +1,2 @@
-// [line 2] Error at 'class': Expect expression.
+// Error: a class declaration can't be the body of an 'if' (a statement is required)
 if (true) class Foo {}

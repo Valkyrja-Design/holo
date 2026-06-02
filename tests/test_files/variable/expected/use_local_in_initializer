@@ -1,2 +1,11 @@
-[line 3] Error at 'a': Cannot use variable 'a' in its own initializer
-[line 4] Error at '}': Expected expression
+error: cannot read variable 'a' in its own initializer
+ --> line 3:11
+  |
+3 |   var a = a; // Error: 'a' can't be read in its own initializer
+  |           ^
+
+error: expected expression
+ --> line 4:1
+  |
+4 | }
+  | ^

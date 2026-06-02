@@ -1,2 +1,2 @@
-// [line 2] Error at 'false': Expected variable name
+// Error: 'false' is a reserved keyword and can't be used as a variable name
 var false = "value";

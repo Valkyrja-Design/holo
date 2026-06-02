@@ -1,2 +1,11 @@
-[line 8] Error at ')': Expected '.' after 'super'
-[line 9] Error at '}': Expected expression
+error: expected '.' after 'super'
+ --> line 8:11
+  |
+8 |     (super).method();
+  |           ^
+
+error: expected expression
+ --> line 9:3
+  |
+9 |   }
+  |   ^

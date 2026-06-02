@@ -1,4 +1,23 @@
-[line 1] Error at ';': Expected expression
-[line 2] Error at ';': Expected expression
-[line 3] Error at '+': Expected expression
-[line 4] Error at '+': Expected expression
+error: expected expression
+ --> line 1:6
+  |
+1 | print;
+  |      ^
+
+error: expected expression
+ --> line 2:11
+  |
+2 | print 1 + ;
+  |           ^
+
+error: expected expression
+ --> line 3:7
+  |
+3 | print + 2;
+  |       ^
+
+error: expected expression
+ --> line 4:7
+  |
+4 | print +;
+  |       ^

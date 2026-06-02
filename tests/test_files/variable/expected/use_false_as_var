@@ -1,1 +1,5 @@
-[line 2] Error at 'false': Expected variable name
+error: expected variable name
+ --> line 2:5
+  |
+2 | var false = "value";
+  |     ^^^^^

@@ -1,2 +1,11 @@
-[line 2] Error at 'a': Redeclaration of variable 'a'
-[line 3] Error at '}': Expected expression
+error: variable 'a' is already declared in this scope
+ --> line 2:7
+  |
+2 |   var a; // Error: 'a' is already declared as a parameter in this scope
+  |       ^
+
+error: expected expression
+ --> line 3:1
+  |
+3 | }
+  | ^

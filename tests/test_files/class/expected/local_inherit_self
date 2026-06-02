@@ -1,1 +1,5 @@
-[line 2] Error at 'Foo': A class cannot inherit from itself
+error: a class cannot inherit from itself
+ --> line 2:15
+  |
+2 |   class Foo : Foo {} // Error: a class can't inherit from itself
+  |               ^^^

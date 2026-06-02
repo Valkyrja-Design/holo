@@ -1,2 +1,11 @@
-[line 4] Error at 'a': Redeclaration of variable 'a'
-[line 5] Error at '}': Expected expression
+error: variable 'a' is already declared in this scope
+ --> line 4:7
+  |
+4 |   var a = "other"; // Error: 'a' is already declared in this scope
+  |       ^
+
+error: expected expression
+ --> line 5:1
+  |
+5 | }
+  | ^

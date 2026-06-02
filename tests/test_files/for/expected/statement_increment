@@ -1,1 +1,5 @@
-[line 2] Error at '{': Expected expression
+error: expected expression
+ --> line 2:24
+  |
+2 | for (var a = 1; a < 2; {}) {}
+  |                        ^

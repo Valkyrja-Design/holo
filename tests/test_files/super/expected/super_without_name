@@ -1,2 +1,11 @@
-[line 5] Error at ';': Expected superclass method name
-[line 6] Error at '}': Expected expression
+error: expected superclass method name
+ --> line 5:11
+  |
+5 |     super.; // Error: 'super.' must be followed by a method name
+  |           ^
+
+error: expected expression
+ --> line 6:3
+  |
+6 |   }
+  |   ^

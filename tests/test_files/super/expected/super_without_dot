@@ -1,2 +1,11 @@
-[line 6] Error at ';': Expected '.' after 'super'
-[line 7] Error at '}': Expected expression
+error: expected '.' after 'super'
+ --> line 6:10
+  |
+6 |     super;
+  |          ^
+
+error: expected expression
+ --> line 7:3
+  |
+7 |   }
+  |   ^

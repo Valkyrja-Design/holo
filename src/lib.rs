@@ -1,6 +1,7 @@
 pub mod chunk;
 pub mod compiler;
 pub mod disassembler;
+pub mod error;
 pub mod gc;
 pub mod native;
 pub mod scanner;

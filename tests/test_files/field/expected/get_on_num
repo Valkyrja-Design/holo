@@ -1,1 +1,5 @@
-[line 1] Error at 'foo': Expected ';' at the end of statement
+error: expected ';' after statement
+ --> line 1:5
+  |
+1 | 123.foo; // Error: a number literal has no properties, so '.foo' is not allowed
+  |     ^^^

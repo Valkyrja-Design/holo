@@ -4,7 +4,7 @@ class A {
 
 class B : A {
   method() {
-    // [line 8] Error at ')': Expected '.' after 'super'
+    // Error: 'super' must be immediately followed by '.method', so '(super)' is invalid
     (super).method();
   }
 }

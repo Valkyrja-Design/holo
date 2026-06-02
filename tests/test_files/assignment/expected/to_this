@@ -1,2 +1,11 @@
-[line 3] Error at '=': Invalid assignment target
-[line 4] Error at '}': Expected expression
+error: invalid assignment target
+ --> line 3:10
+  |
+3 |     this = "value"; // Error: 'this' is not a valid assignment target
+  |          ^
+
+error: expected expression
+ --> line 4:3
+  |
+4 |   }
+  |   ^

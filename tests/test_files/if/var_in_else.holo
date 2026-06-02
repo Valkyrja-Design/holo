@@ -1,2 +1,2 @@
-// [line 2] Error at 'var': Expect expression.
+// Error: a variable declaration can't be the body of an 'else' (a statement is required)
 if (true) "ok"; else var foo;

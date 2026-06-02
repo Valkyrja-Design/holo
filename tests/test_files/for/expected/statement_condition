@@ -1,2 +1,11 @@
-[line 3] Error at '{': Expected expression
-[line 3] Error at ')': Expected ';' at the end of statement
+error: expected expression
+ --> line 2:17
+  |
+2 | for (var a = 1; {}; a = a + 1) {}
+  |                 ^
+
+error: expected ';' after statement
+ --> line 2:30
+  |
+2 | for (var a = 1; {}; a = a + 1) {}
+  |                              ^

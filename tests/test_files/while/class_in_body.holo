@@ -1,2 +1,2 @@
-// [line 2] Error at 'class': Expected expression
+// Error: a class declaration can't be the body of a 'while' (a statement is required)
 while (true) class Foo {}

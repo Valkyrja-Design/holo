@@ -1,5 +1,6 @@
 use super::{
     chunk::{Chunk, OpCode},
+    error::{CompileError, CompileErrorKind, Expected},
     gc::GC,
     scanner::Scanner,
     sym_table::SymbolTable,
@@ -10,17 +11,6 @@ use super::{
 use std::io::Write;
 
 type Result<'a, T> = std::result::Result<T, CompileError<'a>>;
-
-struct CompileError<'a> {
-    token: Token<'a>,
-    err: String,
-}
-
-impl<'a> CompileError<'a> {
-    pub fn new(token: Token<'a>, err: String) -> Self {
-        CompileError { token, err }
-    }
-}
 
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -121,6 +111,7 @@ struct ClassContext {
 }
 
 pub struct Compiler<'a, 'b, W: Write> {
+    source: &'a str,
     scanner: Scanner<'a>,
     curr_token: Token<'a>,
     prev_token: Token<'a>,
@@ -408,16 +399,19 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         err_stream: &'b mut W,
     ) -> Self {
         Compiler {
+            source,
             scanner: Scanner::new(source),
             curr_token: Token {
                 kind: TokenKind::Eof,
                 lexeme: "",
                 line: 0,
+                column: 0,
             },
             prev_token: Token {
                 kind: TokenKind::Eof,
                 lexeme: "",
                 line: 0,
+                column: 0,
             },
             function: Function {
                 name: func_name.to_owned(),
@@ -479,7 +473,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     }
 
     fn var_declaration(&mut self) -> Result<'a, ()> {
-        self.consume(TokenKind::Identifier, "Expected variable name")?;
+        self.consume(TokenKind::Identifier, Expected::VariableName)?;
 
         let name = self.prev_token.lexeme;
         let index = if self.curr_depth > 0 {
@@ -496,7 +490,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             self.emit_opcode(OpCode::Nil);
         }
 
-        self.consume(TokenKind::Semicolon, "Expected ';' at the end of statement")?;
+        self.consume(TokenKind::Semicolon, Expected::Semicolon)?;
 
         if self.curr_depth > 0 {
             self.mark_as_initialized(index);
@@ -506,13 +500,13 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 OpCode::DefineGlobal,
                 OpCode::DefineGlobalLong,
                 index,
-                "Too many globals in the program".to_owned(),
+                CompileErrorKind::TooManyGlobals,
             )
         }
     }
 
     fn fun_declaration(&mut self) -> Result<'a, ()> {
-        self.consume(TokenKind::Identifier, "Expected function name")?;
+        self.consume(TokenKind::Identifier, Expected::FunctionName)?;
 
         let name = self.prev_token.lexeme;
 
@@ -546,7 +540,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 OpCode::DefineGlobal,
                 OpCode::DefineGlobalLong,
                 index,
-                "Too many globals in the program".to_owned(),
+                CompileErrorKind::TooManyGlobals,
             )
         }
     }
@@ -558,21 +552,22 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         const MAX_PARAMS: u8 = 255;
 
         // Compile the parameter list
-        self.consume(TokenKind::LeftParen, "Expected '(' after function name")?;
+        self.consume(TokenKind::LeftParen, Expected::LeftParenAfterFunctionName)?;
 
         let mut arity: u8 = 0;
 
         if !self.check(TokenKind::RightParen) {
             loop {
+                self.consume(TokenKind::Identifier, Expected::ParameterName)?;
+
                 if arity == MAX_PARAMS {
                     return Err(CompileError::new(
                         self.prev_token.clone(),
-                        "Cannot have more than 255 parameters".to_string(),
+                        CompileErrorKind::TooManyParameters,
                     ));
                 }
 
                 arity += 1;
-                self.consume(TokenKind::Identifier, "Expected parameter name")?;
 
                 let name = self.prev_token.lexeme;
                 let index = self.declare_local(name)?;
@@ -587,13 +582,10 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
 
         self.function.arity = arity;
-        self.consume(
-            TokenKind::RightParen,
-            "Expected ')' after function parameters",
-        )?;
+        self.consume(TokenKind::RightParen, Expected::RightParenAfterParameters)?;
 
         // Compile the body
-        self.consume(TokenKind::LeftBrace, "Expected '{' before function body")?;
+        self.consume(TokenKind::LeftBrace, Expected::LeftBraceBeforeFunctionBody)?;
         self.block()?;
 
         // Implicit return
@@ -620,7 +612,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             if upvalue.index > u8::MAX as usize {
                 return Err(CompileError::new(
                     self.prev_token.clone(),
-                    "Too many local variables or upvalues to capture in a closure".to_string(),
+                    CompileErrorKind::TooManyUpvalues,
                 ));
             }
 
@@ -633,7 +625,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
     /// Compiles a class declaration, assumes the `class` keyword has been consumed
     fn class_declaration(&mut self) -> Result<'a, ()> {
-        self.consume(TokenKind::Identifier, "Expected class name")?;
+        self.consume(TokenKind::Identifier, Expected::ClassName)?;
 
         let class_name = self.prev_token.lexeme;
         let index = self.declare_variable(class_name)?;
@@ -650,7 +642,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 OpCode::DefineGlobal,
                 OpCode::DefineGlobalLong,
                 index,
-                "Too many globals in the program".to_owned(),
+                CompileErrorKind::TooManyGlobals,
             )?;
         }
 
@@ -661,12 +653,12 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         // Compile the superclass, if any
         if self.check(TokenKind::Colon) {
             self.advance()?;
-            self.consume(TokenKind::Identifier, "Expected superclass name after ':'")?;
+            self.consume(TokenKind::Identifier, Expected::SuperclassName)?;
 
             if self.prev_token.lexeme == class_name {
                 return Err(CompileError::new(
                     self.prev_token.clone(),
-                    "A class cannot inherit from itself".to_string(),
+                    CompileErrorKind::InheritFromSelf,
                 ));
             }
 
@@ -693,14 +685,14 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.resolve_variable(class_name)?;
 
         // Compile the class body
-        self.consume(TokenKind::LeftBrace, "Expected '{' before class body")?;
+        self.consume(TokenKind::LeftBrace, Expected::LeftBraceBeforeClassBody)?;
 
         // Compile the method declarations
         while !self.check(TokenKind::RightBrace) && !self.check(TokenKind::Eof) {
             self.method_declaration()?;
         }
 
-        self.consume(TokenKind::RightBrace, "Expected '}' after class body")?;
+        self.consume(TokenKind::RightBrace, Expected::RightBraceAfterClassBody)?;
 
         // Pop the class variable
         self.emit_opcode(OpCode::Pop);
@@ -717,7 +709,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     /// Compiles a method declaration
     fn method_declaration(&mut self) -> Result<'a, ()> {
         // Method declarations don't begin with `fun` keyword
-        self.consume(TokenKind::Identifier, "Expected method name")?;
+        self.consume(TokenKind::Identifier, Expected::MethodName)?;
 
         let method_name = self.prev_token.lexeme;
         let method_name_ptr = self.str_intern_table.intern_slice(method_name, self.gc);
@@ -781,7 +773,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
     fn print_statement(&mut self) -> Result<'a, ()> {
         self.expression()?;
-        self.consume(TokenKind::Semicolon, "Expected ';' at the end of statement")?;
+        self.consume(TokenKind::Semicolon, Expected::Semicolon)?;
         self.emit_opcode(OpCode::Print);
 
         Ok(())
@@ -797,7 +789,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 TokenKind::Eof => {
                     return Err(CompileError::new(
                         self.curr_token.to_owned(),
-                        "Expected closing '}' for the block".to_owned(),
+                        CompileErrorKind::Expected(Expected::RightBraceToCloseBlock),
                     ))
                 }
                 _ => self.declaration()?,
@@ -806,10 +798,10 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     }
 
     fn if_stmt(&mut self) -> Result<'a, ()> {
-        self.consume(TokenKind::LeftParen, "Expected '('")?;
+        self.consume(TokenKind::LeftParen, Expected::LeftParen)?;
         // Compile the condition
         self.expression()?;
-        self.consume(TokenKind::RightParen, "Expected ')'")?;
+        self.consume(TokenKind::RightParen, Expected::RightParen)?;
 
         let then_jump = self.emit_jump(OpCode::JumpIfFalse);
 
@@ -842,10 +834,10 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
         self.begin_loop(loop_start);
 
-        self.consume(TokenKind::LeftParen, "Expected '('")?;
+        self.consume(TokenKind::LeftParen, Expected::LeftParen)?;
         // Compile the condition
         self.expression()?;
-        self.consume(TokenKind::RightParen, "Expected ')'")?;
+        self.consume(TokenKind::RightParen, Expected::RightParen)?;
 
         let exit_jump = self.emit_jump(OpCode::JumpIfFalse);
 
@@ -866,7 +858,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         // Start a new scope for the initializer
         self.begin_scope();
 
-        self.consume(TokenKind::LeftParen, "Expected '('")?;
+        self.consume(TokenKind::LeftParen, Expected::LeftParen)?;
 
         // Compile the initializer, if any. It can be a variable declaration,
         // expression statement or just ';'
@@ -895,7 +887,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             self.emit_opcode(OpCode::Pop);
         }
 
-        self.consume(TokenKind::Semicolon, "Expected ';' at the end of condition")?;
+        self.consume(TokenKind::Semicolon, Expected::SemicolonAfterCondition)?;
 
         // Compile the update expression, if any
         if !self.check(TokenKind::RightParen) {
@@ -914,7 +906,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             self.patch_jump(update_jump)?;
         }
 
-        self.consume(TokenKind::RightParen, "Expected ')'")?;
+        self.consume(TokenKind::RightParen, Expected::RightParen)?;
 
         self.begin_loop(loop_start);
 
@@ -939,7 +931,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         if self.contexts.is_empty() {
             return Err(CompileError::new(
                 self.prev_token.clone(),
-                "'return' statement can only be used inside a function".to_string(),
+                CompileErrorKind::ReturnOutsideFunction,
             ));
         }
 
@@ -950,19 +942,19 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             if self.is_initializer {
                 return Err(CompileError::new(
                     self.prev_token.clone(),
-                    "Cannot return a value from an initializer".to_string(),
+                    CompileErrorKind::ReturnInInitializer,
                 ));
             }
             self.expression()?;
         }
 
         self.emit_opcode(OpCode::Return);
-        self.consume(TokenKind::Semicolon, "Expected ';' at the end of statement")
+        self.consume(TokenKind::Semicolon, Expected::Semicolon)
     }
 
     fn expression_statement(&mut self) -> Result<'a, ()> {
         self.expression()?;
-        self.consume(TokenKind::Semicolon, "Expected ';' at the end of statement")?;
+        self.consume(TokenKind::Semicolon, Expected::Semicolon)?;
         self.emit_opcode(OpCode::Pop);
 
         Ok(())
@@ -989,8 +981,8 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             loop {
                 if arity == MAX_PARAMS {
                     return Err(CompileError::new(
-                        self.prev_token.clone(),
-                        "Cannot have more than 255 arguments".to_string(),
+                        self.curr_token.clone(),
+                        CompileErrorKind::TooManyArguments,
                     ));
                 }
 
@@ -1007,10 +999,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         }
 
         // Consume the closing parenthesis
-        self.consume(
-            TokenKind::RightParen,
-            "Expected ')' after function arguments",
-        )?;
+        self.consume(TokenKind::RightParen, Expected::RightParenAfterArguments)?;
 
         Ok(arity)
     }
@@ -1024,7 +1013,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             if !self.locals[index as usize].initialized {
                 return Err(CompileError::new(
                     self.prev_token.to_owned(),
-                    format!("Cannot use variable '{}' in its own initializer", name),
+                    CompileErrorKind::VariableInOwnInitializer(name.to_string()),
                 ));
             }
 
@@ -1061,19 +1050,9 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         if can_assign && self.curr_token.kind == TokenKind::Equal {
             self.advance()?;
             self.expression()?;
-            self.emit_opcode_with_num(
-                set_op,
-                set_op_long,
-                idx,
-                "Too many globals in the program".to_string(),
-            )
+            self.emit_opcode_with_num(set_op, set_op_long, idx, CompileErrorKind::TooManyGlobals)
         } else {
-            self.emit_opcode_with_num(
-                get_op,
-                get_op_long,
-                idx,
-                "Too many globals in the program".to_string(),
-            )
+            self.emit_opcode_with_num(get_op, get_op_long, idx, CompileErrorKind::TooManyGlobals)
         }
     }
 
@@ -1084,7 +1063,10 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 OpCode::ConstantLong,
                 Value::Number(value),
             ),
-            Err(err) => Err(CompileError::new(self.prev_token.clone(), err.to_string())),
+            Err(_) => Err(CompileError::new(
+                self.prev_token.clone(),
+                CompileErrorKind::InvalidNumber,
+            )),
         }
     }
 
@@ -1102,10 +1084,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 self.emit_opcode(OpCode::False);
                 Ok(())
             }
-            _ => Err(CompileError::new(
-                self.prev_token.clone(),
-                "Expected a literal".to_string(),
-            )),
+            _ => unreachable!("literal() called on a non-literal token"),
         }
     }
 
@@ -1121,34 +1100,28 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                     Value::String(str_ptr),
                 )
             }
-            _ => Err(CompileError::new(
-                self.prev_token.clone(),
-                "Expected a string".to_string(),
-            )),
+            _ => unreachable!("string() called on a non-string token"),
         }
     }
 
     fn grouping(&mut self, _: bool) -> Result<'a, ()> {
         self.expression()?;
-        self.consume(TokenKind::RightParen, "Expected ')'")
+        self.consume(TokenKind::RightParen, Expected::RightParen)
     }
 
     fn unary(&mut self, _: bool) -> Result<'a, ()> {
         let operator_kind = self.prev_token.kind;
+        let operator_line = self.prev_token.line;
 
         // Compile the operand
         self.parse_precedence(Precedence::Unary)?;
 
-        // Emit the operator instruction
+        // Emit the operator instruction at the operator's line, not the
+        // operand's, so errors point at the operator even across line breaks.
         match operator_kind {
-            TokenKind::Minus => self.emit_opcode(OpCode::Negate),
-            TokenKind::Bang => self.emit_opcode(OpCode::Not),
-            _ => {
-                return Err(CompileError::new(
-                    self.prev_token.clone(),
-                    "Unexpected unary operator".to_string(),
-                ))
-            }
+            TokenKind::Minus => self.emit_opcode_at_line(OpCode::Negate, operator_line),
+            TokenKind::Bang => self.emit_opcode_at_line(OpCode::Not, operator_line),
+            _ => unreachable!("unary() called on a non-unary operator"),
         }
 
         Ok(())
@@ -1157,28 +1130,27 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     fn binary(&mut self, _: bool) -> Result<'a, ()> {
         let operator_token = self.prev_token.clone();
         let operator_kind = self.prev_token.kind;
+        let operator_line = operator_token.line;
 
         // Compile the operand
         self.parse_precedence(self.get_rule(operator_kind).precedence + 1)?;
 
-        // Emit the operator instruction
+        // Emit the operator instruction at the operator's line, not the
+        // operand's, so errors point at the operator even across line breaks.
         match operator_kind {
-            TokenKind::Plus => self.emit_opcode(OpCode::Add),
-            TokenKind::Minus => self.emit_opcode(OpCode::Sub),
-            TokenKind::Star => self.emit_opcode(OpCode::Mult),
-            TokenKind::Slash => self.emit_opcode(OpCode::Divide),
-            TokenKind::EqualEqual => self.emit_opcode(OpCode::Equal),
-            TokenKind::BangEqual => self.emit_opcode(OpCode::NotEqual),
-            TokenKind::Greater => self.emit_opcode(OpCode::Greater),
-            TokenKind::GreaterEqual => self.emit_opcode(OpCode::GreaterEqual),
-            TokenKind::Less => self.emit_opcode(OpCode::Less),
-            TokenKind::LessEqual => self.emit_opcode(OpCode::LessEqual),
-            _ => {
-                return Err(CompileError::new(
-                    operator_token,
-                    "Unexpected binary operator".to_string(),
-                ));
+            TokenKind::Plus => self.emit_opcode_at_line(OpCode::Add, operator_line),
+            TokenKind::Minus => self.emit_opcode_at_line(OpCode::Sub, operator_line),
+            TokenKind::Star => self.emit_opcode_at_line(OpCode::Mult, operator_line),
+            TokenKind::Slash => self.emit_opcode_at_line(OpCode::Divide, operator_line),
+            TokenKind::EqualEqual => self.emit_opcode_at_line(OpCode::Equal, operator_line),
+            TokenKind::BangEqual => self.emit_opcode_at_line(OpCode::NotEqual, operator_line),
+            TokenKind::Greater => self.emit_opcode_at_line(OpCode::Greater, operator_line),
+            TokenKind::GreaterEqual => {
+                self.emit_opcode_at_line(OpCode::GreaterEqual, operator_line)
             }
+            TokenKind::Less => self.emit_opcode_at_line(OpCode::Less, operator_line),
+            TokenKind::LessEqual => self.emit_opcode_at_line(OpCode::LessEqual, operator_line),
+            _ => unreachable!("binary() called on a non-binary operator"),
         }
 
         Ok(())
@@ -1192,7 +1164,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             self.parse_precedence(Precedence::Assignment)?;
 
             // Consume the colon
-            self.consume(TokenKind::Colon, "Expected ':'")?;
+            self.consume(TokenKind::Colon, Expected::Colon)?;
 
             // Compile the 3rd operand
             self.parse_precedence(Precedence::Assignment)?;
@@ -1200,10 +1172,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             self.emit_opcode(OpCode::Ternary);
             Ok(())
         } else {
-            Err(CompileError::new(
-                self.prev_token.clone(),
-                "Expected '?'".to_string(),
-            ))
+            unreachable!("ternary() called on a non-'?' operator")
         }
     }
 
@@ -1221,10 +1190,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
             Ok(())
         } else {
-            Err(CompileError::new(
-                self.prev_token.clone(),
-                "Expected 'or'".to_string(),
-            ))
+            unreachable!("logical_or() called on a non-'or' operator")
         }
     }
 
@@ -1242,10 +1208,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
             Ok(())
         } else {
-            Err(CompileError::new(
-                self.prev_token.clone(),
-                "Expected 'and'".to_string(),
-            ))
+            unreachable!("logical_and() called on a non-'and' operator")
         }
     }
 
@@ -1255,11 +1218,11 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         } else {
             return Err(CompileError::new(
                 self.prev_token.clone(),
-                "Cannot use 'continue' outside of a loop".to_string(),
+                CompileErrorKind::ContinueOutsideLoop,
             ));
         };
 
-        self.consume(TokenKind::Semicolon, "Expected ';'")?;
+        self.consume(TokenKind::Semicolon, Expected::Semicolon)?;
 
         // Pop the locals in the loop body
         self.emit_pop_scopes(scope_depth);
@@ -1274,11 +1237,11 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         } else {
             return Err(CompileError::new(
                 self.prev_token.clone(),
-                "Cannot use 'break' outside of a loop".to_string(),
+                CompileErrorKind::BreakOutsideLoop,
             ));
         };
 
-        self.consume(TokenKind::Semicolon, "Expected ';'")?;
+        self.consume(TokenKind::Semicolon, Expected::Semicolon)?;
 
         // Pop the locals in the loop body
         self.emit_pop_scopes(scope_depth);
@@ -1296,7 +1259,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
     }
 
     fn dot(&mut self, can_assign: bool) -> Result<'a, ()> {
-        self.consume(TokenKind::Identifier, "Expected property name")?;
+        self.consume(TokenKind::Identifier, Expected::PropertyName)?;
 
         let name = self.prev_token.lexeme;
         let name_ptr = self.str_intern_table.intern_slice(name, self.gc);
@@ -1322,7 +1285,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         if self.class_contexts.is_empty() {
             return Err(CompileError::new(
                 self.prev_token.clone(),
-                "Cannot use 'this' outside of a class".to_string(),
+                CompileErrorKind::ThisOutsideClass,
             ));
         }
 
@@ -1333,19 +1296,19 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         if self.class_contexts.is_empty() {
             return Err(CompileError::new(
                 self.prev_token.clone(),
-                "Cannot use 'super' outside of a class".to_string(),
+                CompileErrorKind::SuperOutsideClass,
             ));
         }
 
         if !self.class_contexts.last().unwrap().has_superclass {
             return Err(CompileError::new(
                 self.prev_token.clone(),
-                "Cannot use 'super' in a class with no superclass".to_string(),
+                CompileErrorKind::SuperWithoutSuperclass,
             ));
         }
 
-        self.consume(TokenKind::Dot, "Expected '.' after 'super'")?;
-        self.consume(TokenKind::Identifier, "Expected superclass method name")?;
+        self.consume(TokenKind::Dot, Expected::DotAfterSuper)?;
+        self.consume(TokenKind::Identifier, Expected::SuperclassMethodName)?;
 
         let name = self.prev_token.lexeme;
         let name_ptr = self.str_intern_table.intern_slice(name, self.gc);
@@ -1379,7 +1342,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             None => {
                 return Err(CompileError::new(
                     self.prev_token.clone(),
-                    "Expected expression".to_string(),
+                    CompileErrorKind::Expected(Expected::Expression),
                 ))
             }
         }
@@ -1394,7 +1357,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 None => {
                     return Err(CompileError::new(
                         self.prev_token.clone(),
-                        "Expected expression".to_string(),
+                        CompileErrorKind::Expected(Expected::Expression),
                     ))
                 }
             }
@@ -1403,7 +1366,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         if can_assign && self.check(TokenKind::Equal) {
             Err(CompileError::new(
                 self.curr_token.clone(),
-                "Invalid assignment target".to_owned(),
+                CompileErrorKind::InvalidAssignmentTarget,
             ))
         } else {
             Ok(())
@@ -1417,17 +1380,24 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.curr_token = token.clone();
 
         if let TokenKind::Error = token.kind {
-            return Err(CompileError::new(token.clone(), token.lexeme.to_string()));
+            let scan_error = self
+                .scanner
+                .take_error()
+                .expect("scanner produced an error token without a recorded error");
+            return Err(CompileError::new(token, CompileErrorKind::Scan(scan_error)));
         }
 
         Ok(())
     }
 
-    fn consume(&mut self, expected: TokenKind, err: &'a str) -> Result<'a, ()> {
+    fn consume(&mut self, expected: TokenKind, missing: Expected) -> Result<'a, ()> {
         if self.check(expected) {
             self.advance()
         } else {
-            Err(CompileError::new(self.curr_token.clone(), err.to_string()))
+            Err(CompileError::new(
+                self.curr_token.clone(),
+                CompileErrorKind::Expected(missing),
+            ))
         }
     }
 
@@ -1483,7 +1453,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             if local.name == name {
                 return Err(CompileError::new(
                     self.prev_token.to_owned(),
-                    format!("Redeclaration of variable '{}'", name),
+                    CompileErrorKind::RedeclaredVariable(name.to_string()),
                 ));
             }
         }
@@ -1608,7 +1578,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             if !self.locals[index as usize].initialized {
                 return Err(CompileError::new(
                     self.prev_token.to_owned(),
-                    format!("Cannot use variable '{}' in its own initializer", name),
+                    CompileErrorKind::VariableInOwnInitializer(name.to_string()),
                 ));
             }
 
@@ -1627,12 +1597,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             }
         };
 
-        self.emit_opcode_with_num(
-            get_op,
-            get_op_long,
-            idx,
-            "Too many globals in the program".to_string(),
-        )
+        self.emit_opcode_with_num(get_op, get_op_long, idx, CompileErrorKind::TooManyGlobals)
     }
 
     /// Adds the a new upvalue to the current function
@@ -1777,6 +1742,10 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         self.chunk().write_opcode(opcode, line);
     }
 
+    fn emit_opcode_at_line(&mut self, opcode: OpCode, line: usize) {
+        self.chunk().write_opcode(opcode, line);
+    }
+
     fn emit_return(&mut self) -> Result<'a, ()> {
         // Implicitly return `this` in initializers and `nil` otherwise
         if self.is_initializer {
@@ -1784,7 +1753,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
                 OpCode::GetLocal,
                 OpCode::GetLocalLong,
                 0,
-                "Too many locals in the program".to_string(),
+                CompileErrorKind::TooManyLocals,
             )?;
         } else {
             self.emit_opcode(OpCode::Nil);
@@ -1799,7 +1768,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         opcode: OpCode,
         opcode_long: OpCode,
         num: usize,
-        err: String,
+        err: CompileErrorKind,
     ) -> Result<'a, ()> {
         const MAX24BIT: usize = (1 << 24) - 1;
 
@@ -1828,7 +1797,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         } else {
             Err(CompileError::new(
                 self.prev_token.clone(),
-                "Too many constants in the chunk".to_string(),
+                CompileErrorKind::TooManyConstants,
             ))
         }
     }
@@ -1844,7 +1813,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             opcode,
             opcode_long,
             index,
-            "Too many constants in the chunk".to_string(),
+            CompileErrorKind::TooManyConstants,
         )
     }
 
@@ -1865,7 +1834,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         if jump_dist > u16::MAX as usize {
             Err(CompileError::new(
                 self.prev_token.clone(),
-                "Too much jump distance".to_string(),
+                CompileErrorKind::JumpTooLarge,
             ))
         } else {
             self.chunk().code[offset] = ((jump_dist >> 8) & BYTE_MASK) as u8;
@@ -1885,7 +1854,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
         if jump_dist > u16::MAX as usize {
             Err(CompileError::new(
                 self.prev_token.clone(),
-                "Too much jump distance".to_string(),
+                CompileErrorKind::JumpTooLarge,
             ))
         } else {
             self.emit_byte(((jump_dist >> 8) & BYTE_MASK) as u8);
@@ -1900,14 +1869,10 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
 
     fn report_err(&mut self, err: CompileError<'a>) {
         self.had_error = true;
-        write!(self.err_stream, "[line {}] Error", err.token.line).unwrap();
 
-        match err.token.kind {
-            TokenKind::Eof => write!(self.err_stream, " at end of file").unwrap(),
-            TokenKind::Error => {}
-            _ => write!(self.err_stream, " at '{}'", err.token.lexeme).unwrap(),
-        }
-
-        writeln!(self.err_stream, ": {}", err.err).unwrap();
+        let mut rendered = String::new();
+        err.render(self.source, &mut rendered);
+        // Blank line separates consecutive diagnostics.
+        writeln!(self.err_stream, "{rendered}").unwrap();
     }
 }

@@ -3,30 +3,36 @@
         kind: Number,
         lexeme: "123",
         line: 1,
+        column: 1,
     },
     Token {
         kind: Number,
         lexeme: "123.456",
         line: 2,
+        column: 1,
     },
     Token {
         kind: Dot,
         lexeme: ".",
         line: 3,
+        column: 1,
     },
     Token {
         kind: Number,
         lexeme: "456",
         line: 3,
+        column: 2,
     },
     Token {
         kind: Number,
         lexeme: "123.",
         line: 4,
+        column: 1,
     },
     Token {
         kind: Eof,
         lexeme: "",
         line: 5,
+        column: 1,
     },
 ]

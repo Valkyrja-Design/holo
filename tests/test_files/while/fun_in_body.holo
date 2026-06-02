@@ -1,2 +1,2 @@
-// [line 2] Error at 'fun': Expected expression
+// Error: a function declaration can't be the body of a 'while' (a statement is required)
 while (true) fun foo() {}

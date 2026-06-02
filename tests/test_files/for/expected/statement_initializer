@@ -1,2 +1,11 @@
-[line 3] Error at '{': Expected expression
-[line 3] Error at ')': Expected ';' at the end of statement
+error: expected expression
+ --> line 2:6
+  |
+2 | for ({}; a < 2; a = a + 1) {}
+  |      ^
+
+error: expected ';' after statement
+ --> line 2:26
+  |
+2 | for ({}; a < 2; a = a + 1) {}
+  |                          ^

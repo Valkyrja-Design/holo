@@ -1,2 +1,2 @@
-// [line 2] Error at 'fun': Expect expression.
+// Error: a function declaration can't be the body of an 'else' (a statement is required)
 if (true) "ok"; else fun foo() {}

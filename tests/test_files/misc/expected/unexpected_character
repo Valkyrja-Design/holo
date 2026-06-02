@@ -1,1 +1,5 @@
-[line 2] Error: Unexpected char
+error: unexpected character '|'
+ --> line 2:7
+  |
+2 | foo(a | b);
+  |       ^

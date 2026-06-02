@@ -1,1 +1,5 @@
-[line 2] Error: Unterminated multi-line comment
+error: unterminated block comment
+ --> line 2:1
+  |
+2 | a multi-line comment
+  | ^

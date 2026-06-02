@@ -3,6 +3,7 @@
 //! This module provides a [`Scanner`] that tokenizes Holo source code into a stream
 //! of tokens for the parser.
 
+use crate::error::ScanError;
 use crate::token::{Token, TokenKind};
 
 /// A lexical analyzer that converts Holo source code into tokens.
@@ -16,6 +17,12 @@ pub struct Scanner<'a> {
     start_offset: usize,
     curr_offset: usize,
     curr_line: usize,
+    /// 1-based column of the next character to be consumed.
+    curr_column: usize,
+    /// 1-based column of the first character of the token being scanned.
+    start_column: usize,
+    /// Structured reason for the most recently produced [`TokenKind::Error`] token.
+    last_error: Option<ScanError>,
 }
 
 impl<'a> Scanner<'a> {
@@ -34,7 +41,15 @@ impl<'a> Scanner<'a> {
             start_offset: 0,
             curr_offset: 0,
             curr_line: 1,
+            curr_column: 1,
+            start_column: 1,
+            last_error: None,
         }
+    }
+
+    /// Returns the structured reason for the most recent error token, if any.
+    pub fn take_error(&mut self) -> Option<ScanError> {
+        self.last_error.take()
     }
 
     pub fn scan_token(&mut self) -> Token<'a> {
@@ -43,6 +58,7 @@ impl<'a> Scanner<'a> {
         }
 
         self.start_offset = self.curr_offset;
+        self.start_column = self.curr_column;
 
         let c = self.advance();
 
@@ -87,7 +103,7 @@ impl<'a> Scanner<'a> {
             c if c.is_ascii_digit() => self.scan_number(),
             c if Self::is_identifier_start(c) => self.scan_identifier(),
 
-            _ => self.make_error_token("Unexpected char"),
+            _ => self.make_error_token(ScanError::UnexpectedChar(c)),
         }
     }
 
@@ -99,6 +115,12 @@ impl<'a> Scanner<'a> {
 
         if let Some((idx, c)) = head {
             self.curr_offset = idx + c.len_utf8();
+            if c == '\n' {
+                self.curr_line += 1;
+                self.curr_column = 1;
+            } else {
+                self.curr_column += 1;
+            }
             Some(c)
         } else {
             None
@@ -136,15 +158,11 @@ impl<'a> Scanner<'a> {
                     self.advance(); // Consume the closing quote
                     return self.make_token(TokenKind::String);
                 }
-                Some('\n') => {
-                    self.curr_line += 1;
-                    self.advance();
-                }
                 Some(_) => {
                     self.advance();
                 }
                 None => {
-                    return self.make_error_token("Unterminated string literal");
+                    return self.make_error_token(ScanError::UnterminatedString);
                 }
             }
         }
@@ -215,11 +233,7 @@ impl<'a> Scanner<'a> {
     fn skip_whitespace(&mut self) -> Option<Token<'a>> {
         loop {
             match self.peek()? {
-                ' ' | '\t' | '\r' => {
-                    self.advance();
-                }
-                '\n' => {
-                    self.curr_line += 1;
+                ' ' | '\t' | '\r' | '\n' => {
                     self.advance();
                 }
                 '/' => {
@@ -229,7 +243,6 @@ impl<'a> Scanner<'a> {
                             loop {
                                 match self.peek() {
                                     Some('\n') => {
-                                        self.curr_line += 1;
                                         self.advance();
                                         break;
                                     }
@@ -248,33 +261,29 @@ impl<'a> Scanner<'a> {
                             // Consume until "*/"
                             loop {
                                 match self.peek() {
-                                    Some('*') => match self.peek_next() {
-                                        Some('/') => {
-                                            self.advance();
-                                            self.advance();
-                                            break;
+                                    Some('*') => {
+                                        match self.peek_next() {
+                                            Some('/') => {
+                                                self.advance();
+                                                self.advance();
+                                                break;
+                                            }
+                                            Some(_) => {
+                                                self.advance();
+                                            }
+                                            None => {
+                                                return Some(self.make_error_token(
+                                                    ScanError::UnterminatedComment,
+                                                ))
+                                            }
                                         }
-                                        Some(_) => {
-                                            self.advance();
-                                        }
-                                        None => {
-                                            return Some(self.make_error_token(
-                                                "Unterminated multi-line comment",
-                                            ))
-                                        }
-                                    },
-                                    Some('\n') => {
-                                        self.curr_line += 1;
-                                        self.advance();
                                     }
                                     Some(_) => {
                                         self.advance();
                                     }
                                     None => {
                                         return Some(
-                                            self.make_error_token(
-                                                "Unterminated multi-line comment",
-                                            ),
+                                            self.make_error_token(ScanError::UnterminatedComment),
                                         )
                                     }
                                 }
@@ -293,14 +302,17 @@ impl<'a> Scanner<'a> {
             kind,
             lexeme: &self.source[self.start_offset..self.curr_offset],
             line: self.curr_line,
+            column: self.start_column,
         }
     }
 
-    fn make_error_token(&self, err: &'static str) -> Token<'a> {
+    fn make_error_token(&mut self, error: ScanError) -> Token<'a> {
+        self.last_error = Some(error);
         Token {
             kind: TokenKind::Error,
-            lexeme: err,
+            lexeme: &self.source[self.start_offset..self.curr_offset],
             line: self.curr_line,
+            column: self.start_column,
         }
     }
 
@@ -351,6 +363,7 @@ mod tests {
                         kind: TokenKind::Eof,
                         lexeme: _,
                         line: _,
+                        column: _,
                     } => {
                         tokens.push(token);
                         break;
