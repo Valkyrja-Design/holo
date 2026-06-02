@@ -1029,7 +1029,7 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
 
     fn read_constant_long(&mut self) -> Value {
         let ip = self.ip();
-        let idx = Chunk::read_as_24bit_int(&self.chunk().code[ip..ip + 3]);
+        let idx = Chunk::read_int24(&self.chunk().code[ip..ip + 3]);
 
         *self.ip_as_mut() += 3;
         self.chunk().constants[idx]
@@ -1041,14 +1041,14 @@ impl<'a, T: Write, U: Write> VM<'a, T, U> {
 
     fn read_int16(&mut self) -> usize {
         let ip = self.ip();
-        let ret = Chunk::read_as_16bit_int(&self.chunk().code[ip..ip + 2]);
+        let ret = Chunk::read_int16(&self.chunk().code[ip..ip + 2]);
 
         *self.ip_as_mut() += 2;
         ret
     }
     fn read_int24(&mut self) -> usize {
         let ip = self.ip();
-        let ret = Chunk::read_as_24bit_int(&self.chunk().code[ip..ip + 3]);
+        let ret = Chunk::read_int24(&self.chunk().code[ip..ip + 3]);
 
         *self.ip_as_mut() += 3;
         ret

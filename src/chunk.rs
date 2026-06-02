@@ -229,7 +229,7 @@ impl Chunk {
         self.write_byte(opcode.into(), line);
     }
 
-    pub fn write_as_24bit_int(&mut self, mut value: usize, line: usize) {
+    pub fn write_int24(&mut self, mut value: usize, line: usize) {
         const MASK: usize = (1usize << 8) - 1;
         let mut bytes: [u8; 3] = [0; 3];
 
@@ -244,7 +244,7 @@ impl Chunk {
         self.write_bytes(&bytes, &[line; 3]);
     }
 
-    pub fn write_as_16bit_int(&mut self, value: usize, line: usize) {
+    pub fn write_int16(&mut self, value: usize, line: usize) {
         const MASK: usize = (1usize << 8) - 1;
         let mut bytes: [u8; 2] = [0; 2];
 
@@ -259,7 +259,7 @@ impl Chunk {
         self.constants.len() - 1
     }
 
-    pub fn read_as_24bit_int(bytes: &[u8]) -> usize {
+    pub fn read_int24(bytes: &[u8]) -> usize {
         let a = bytes[0] as usize;
         let b = bytes[1] as usize;
         let c = bytes[2] as usize;
@@ -267,7 +267,7 @@ impl Chunk {
         (a << 16) | (b << 8) | c
     }
 
-    pub fn read_as_16bit_int(bytes: &[u8]) -> usize {
+    pub fn read_int16(bytes: &[u8]) -> usize {
         let a = bytes[0] as usize;
         let b = bytes[1] as usize;
 

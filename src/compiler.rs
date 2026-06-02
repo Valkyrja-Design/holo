@@ -1808,7 +1808,7 @@ impl<'a, 'b, W: Write> Compiler<'a, 'b, W> {
             let line = self.prev_token.line;
 
             self.emit_opcode(opcode_long);
-            self.chunk().write_as_24bit_int(num, line);
+            self.chunk().write_int24(num, line);
             Ok(())
         } else {
             Err(CompileError::new(self.prev_token.clone(), err))

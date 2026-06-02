@@ -80,7 +80,7 @@ fn instr_with_const8(chunk: &Chunk, name: &str, offset: usize) -> usize {
 }
 
 fn instr_with_const24(chunk: &Chunk, name: &str, offset: usize) -> usize {
-    let idx = Chunk::read_as_24bit_int(&chunk.code[offset + 1..offset + 4]);
+    let idx = Chunk::read_int24(&chunk.code[offset + 1..offset + 4]);
 
     println!("{} {:#?}", name, chunk.constants[idx]);
     offset + 4
@@ -99,14 +99,14 @@ fn unary_instr8(chunk: &Chunk, name: &str, offset: usize) -> usize {
 }
 
 fn unary_instr16(chunk: &Chunk, name: &str, offset: usize) -> usize {
-    let op: usize = Chunk::read_as_16bit_int(&chunk.code[offset + 1..offset + 3]);
+    let op: usize = Chunk::read_int16(&chunk.code[offset + 1..offset + 3]);
 
     println!("{} {}", name, op);
     offset + 3
 }
 
 fn unary_instr24(chunk: &Chunk, name: &str, offset: usize) -> usize {
-    let op: usize = Chunk::read_as_24bit_int(&chunk.code[offset + 1..offset + 4]);
+    let op: usize = Chunk::read_int24(&chunk.code[offset + 1..offset + 4]);
 
     println!("{} {}", name, op);
     offset + 4
@@ -139,7 +139,7 @@ fn closure_instr(chunk: &Chunk, mut offset: usize) -> usize {
 }
 
 fn closure_instr_long(chunk: &Chunk, mut offset: usize) -> usize {
-    let idx = Chunk::read_as_24bit_int(&chunk.code[offset + 1..offset + 4]);
+    let idx = Chunk::read_int24(&chunk.code[offset + 1..offset + 4]);
 
     println!("CLOSURE_LONG {}", idx);
     offset += 4;
@@ -196,7 +196,7 @@ mod tests {
             let idx = chunk.add_constant(Value::Number(125.25));
 
             chunk.write_opcode(OpCode::ConstantLong, 2);
-            chunk.write_as_24bit_int(idx, 2);
+            chunk.write_int24(idx, 2);
         }
 
         // Arithmetic
@@ -229,51 +229,51 @@ mod tests {
         chunk.write_byte(5, 10);
 
         chunk.write_opcode(OpCode::DefineGlobalLong, 10);
-        chunk.write_as_24bit_int(500, 10);
+        chunk.write_int24(500, 10);
 
         chunk.write_opcode(OpCode::GetGlobal, 11);
         chunk.write_byte(5, 11);
 
         chunk.write_opcode(OpCode::GetGlobalLong, 11);
-        chunk.write_as_24bit_int(500, 11);
+        chunk.write_int24(500, 11);
 
         chunk.write_opcode(OpCode::SetGlobal, 12);
         chunk.write_byte(5, 12);
 
         chunk.write_opcode(OpCode::SetGlobalLong, 12);
-        chunk.write_as_24bit_int(500, 12);
+        chunk.write_int24(500, 12);
 
         // Local variable operations
         chunk.write_opcode(OpCode::GetLocal, 13);
         chunk.write_byte(1, 13);
 
         chunk.write_opcode(OpCode::GetLocalLong, 13);
-        chunk.write_as_24bit_int(256, 13);
+        chunk.write_int24(256, 13);
 
         chunk.write_opcode(OpCode::SetLocal, 14);
         chunk.write_byte(2, 14);
 
         chunk.write_opcode(OpCode::SetLocalLong, 14);
-        chunk.write_as_24bit_int(257, 14);
+        chunk.write_int24(257, 14);
 
         // Stack manipulation
         chunk.write_opcode(OpCode::PopN, 15);
         chunk.write_byte(3, 15);
 
         chunk.write_opcode(OpCode::PopNLong, 15);
-        chunk.write_as_24bit_int(300, 15);
+        chunk.write_int24(300, 15);
 
         // Control flow
         chunk.write_opcode(OpCode::Return, 7);
 
         chunk.write_opcode(OpCode::Jump, 8);
-        chunk.write_as_16bit_int(125, 9);
+        chunk.write_int16(125, 9);
 
         chunk.write_opcode(OpCode::JumpIfFalse, 8);
-        chunk.write_as_16bit_int(250, 9);
+        chunk.write_int16(250, 9);
 
         chunk.write_opcode(OpCode::JumpIfTrue, 8);
-        chunk.write_as_16bit_int(375, 9);
+        chunk.write_int16(375, 9);
 
         disassemble(&chunk, "simple test chunk");
     }
