@@ -4,6 +4,11 @@ use crate::chunk::Chunk;
 use crate::native::NativeFunc;
 use crate::value::{BoundMethod, Class, ClassInstance, Closure, Function, Upvalue, Value};
 
+/// Estimates the memory footprint of a type in bytes.
+///
+/// This trait is primarily used by the garbage collector to track memory usage
+/// and determine when to trigger collection cycles. The size includes both
+/// the stack-allocated portion of the type and any heap-allocated data it owns.
 pub trait Sizeof {
     // Returns the estimated size of the object in bytes
     fn sizeof(&self) -> usize;
@@ -17,6 +22,7 @@ impl Sizeof for String {
 
 impl<T> Sizeof for Vec<T> {
     fn sizeof(&self) -> usize {
+        // FIXME: This severely underestimates the memory size
         std::mem::size_of::<Vec<T>>() + self.capacity() * std::mem::size_of::<T>()
     }
 }
@@ -34,7 +40,7 @@ impl Sizeof for Function {
     fn sizeof(&self) -> usize {
         self.name.sizeof()
             + std::mem::size_of::<u8>()
-            + std::mem::size_of::<u32>()
+            + std::mem::size_of::<usize>()
             + self.chunk.sizeof()
     }
 }
@@ -77,6 +83,7 @@ where
     V: Sizeof,
 {
     fn sizeof(&self) -> usize {
+        // FIXME: This severely underestimates the memory size
         std::mem::size_of::<HashMap<K, V>>()
             + self.capacity() * (std::mem::size_of::<K>() + std::mem::size_of::<V>())
     }

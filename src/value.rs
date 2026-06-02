@@ -1,28 +1,43 @@
-use super::chunk::Chunk;
-use super::native::NativeFunc;
+use crate::chunk::Chunk;
+use crate::native::NativeFunc;
 use std::collections::HashMap;
 use std::fmt::Debug;
 
+/// Represents a compiled function.
 #[derive(Debug)]
 pub struct Function {
     pub name: String,
     pub arity: u8,
     pub upvalue_count: usize,
+    /// The compiled bytecode and constants for this function.
     pub chunk: Chunk,
 }
 
+/// Represents an upvalue - a variable captured by a closure from an enclosing scope.
+///
+/// Upvalues allow closures to access variables from their defining environment
+/// even after that environment's stack frame has been popped. An upvalue can be
+/// in two states:
+/// - Open: Points to a location on the stack
+/// - Closed: Contains the value directly in the `closed` field
 #[derive(Debug)]
 pub struct Upvalue {
     pub location: *mut Value,
+    /// The closed-over value. Used when the upvalue is closed.
     pub closed: Value,
 }
 
 impl Upvalue {
+    /// Creates a new upvalue pointing to the given location.
+    ///
+    /// # Safety
+    /// The caller must ensure `location` remains valid for the lifetime of this upvalue.
     pub fn new(location: *mut Value, closed: Value) -> Self {
         Self { location, closed }
     }
 }
 
+/// Represents a closure - a function paired with captured variables.
 #[derive(Debug)]
 pub struct Closure {
     pub function: *mut Function,
@@ -57,9 +72,11 @@ impl Closure {
     }
 }
 
+/// Represents a class definition.
 #[derive(Debug)]
 pub struct Class {
     pub name: String,
+    // FIXME: Might want to make it a hashmap over `NonNull<str>`
     pub methods: HashMap<String, *mut Closure>,
 }
 
@@ -72,6 +89,7 @@ impl Class {
     }
 }
 
+/// Represents an instance of a class.
 #[derive(Debug)]
 pub struct ClassInstance {
     pub class: *mut Class,
@@ -92,6 +110,11 @@ impl ClassInstance {
     }
 }
 
+/// Represents a method bound to a specific instance.
+///
+/// When a method is accessed on an instance (e.g., `instance.method`),
+/// it becomes a bound method that remembers both the method implementation
+/// and the instance it should operate on (the receiver/`this`).
 #[derive(Debug)]
 pub struct BoundMethod {
     pub receiver: *mut ClassInstance,
@@ -104,6 +127,7 @@ impl BoundMethod {
     }
 }
 
+/// Represents any value in the language.
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub enum Value {
     Nil,

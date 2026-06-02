@@ -1,3 +1,4 @@
+/// Represents a token extracted from the source code.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TokenKind {
@@ -62,6 +63,7 @@ pub enum TokenKind {
     Eof,
 }
 
+// TODO: Add column information
 #[derive(Debug, Clone)]
 pub struct Token<'a> {
     pub kind: TokenKind,
