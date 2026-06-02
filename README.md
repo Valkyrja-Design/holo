@@ -5,6 +5,16 @@ Holo is a small dynamically-typed, interpreted language inspired by
 to bytecode and executes it on a stack-based virtual machine with a
 mark-and-sweep garbage collector.
 
+## Features
+
+- Dynamic typing with numbers, booleans, strings, and `nil`
+- First-class functions and closures
+- Classes with methods, single inheritance
+- Control flow: `if`/`else`, `while`, `for`, `break`, and `continue`
+- String interpolation with embedded expressions (`"sum: {a + b}"`)
+- Rust-style compile diagnostics with line, column, and caret spans
+- A handful of native functions (e.g. `clock`)
+
 ## A taste of Holo
 
 ### Functions and recursion
@@ -105,16 +115,6 @@ on a virtual machine.
 
 Strings are interned so identical literals share one allocation, and globals are
 resolved through a symbol table built during compilation.
-
-## Features
-
-- Dynamic typing with numbers, booleans, strings, and `nil`
-- First-class functions and closures
-- Classes with methods, single inheritance
-- Control flow: `if`/`else`, `while`, `for`, `break`, and `continue`
-- String interpolation with embedded expressions (`"sum: {a + b}"`)
-- Rust-style compile diagnostics with line, column, and caret spans
-- A handful of native functions (e.g. `clock`)
 
 ## Building
 
